@@ -341,7 +341,7 @@ class Language
             ->setLgDict1URI('https://jisho.org/search/###')
             ->setLgDict2URI('https://www.bing.com/images/search?q=###&form=HDRSC2&first=1&tsc=ImageHoverTitle')
             ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#jp/en/###')
-            ->setLgRegexpWordCharacters('mecab')
+            ->setLgRegexpWordCharacters('\S')
             ->setLgParserType('japanese');
         return $japanese;
     }
