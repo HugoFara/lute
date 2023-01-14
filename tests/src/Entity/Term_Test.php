@@ -77,4 +77,20 @@ class Term_Test extends TestCase
         }
     }
 
+    /**
+     * @group wordcount
+     */
+    public function test_getWordCount_japanese()
+    {
+        $cases = [ "私", "元気", "です" ];
+        $jp = Language::makeJapanese();
+
+        foreach ($cases as $c) {
+            $t = new Term($jp, $c);
+            $this->assertEquals($t->getWordCount(), 1, 'count got ' . $t->getWordCount());
+            $this->assertEquals($t->getText(), $c, 'text');
+            $this->assertEquals($t->getTextLC(), $c, 'lc');
+        }
+    }    
+
 }
