@@ -153,6 +153,11 @@ class JapaneseParser {
         $row = array(0, 0, 0, "", 0);
         $outtext = "";
         foreach (explode(PHP_EOL, $mecabed) as $line) {
+            // Skip blank lines, or the following line's array
+            // assignment fails.
+            if (trim($line) == "")
+                continue;
+
             list($term, $node_type, $third) = explode(mb_chr(9), $line);
             if ($term_type == 2 || $term == 'EOP' && $third == '7') {
                 $sid += 1;
@@ -166,7 +171,7 @@ class JapaneseParser {
             if ($third == '7') {
                 if ($term == 'EOP') {
                     $term = '¶';
-                    $term = '\n';
+                    // $term = '\n';
                     //$outtext .= '\n';
                 }
                 $term_type = 2;

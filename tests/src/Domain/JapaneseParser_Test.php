@@ -30,11 +30,12 @@ final class JapaneseParser_Test extends DatabaseTestBase
         $sql = "select ti2seid, ti2order, ti2text, ti2textlc from textitems2 where ti2woid = 0 order by ti2order";
 
         $expected = [
-            "1; 1; 私; 私;",
+            "1; 1; 私; 私",
             "1; 2; は; は",
             "1; 3; 元気; 元気",
             "1; 4; です; です",
-            "1; 5; .; ."
+            "1; 5; .; .",
+            "1; 6; ¶; ¶"
         ];
         DbHelpers::assertTableContains($sql, $expected, 'after parse');
     }
