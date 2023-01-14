@@ -335,6 +335,8 @@ class Language
     }
 
     public static function makeJapanese() {
+        if (!JapaneseParser::MeCab_installed())
+            throw new \Exception("MeCab not installed.");
         $japanese = new Language();
         $japanese
             ->setLgName('Japanese')
@@ -350,13 +352,16 @@ class Language
     }
 
     public static function getPredefined(): array {
-        return [
+        $ret = [
             Language::makeEnglish(),
             Language::makeFrench(),
             Language::makeGerman(),
             Language::makeSpanish(),
-            Language::makeJapanese(),
         ];
+
+        if (JapaneseParser::MeCab_installed())
+            $ret[] = Language::makeJapanese();
+        return $ret;
     }
 
 }
