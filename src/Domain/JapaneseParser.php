@@ -140,8 +140,6 @@ class JapaneseParser {
             if ($third == '7') {
                 if ($term == 'EOP') {
                     $term = '¶';
-                    // $term = '\n';
-                    //$outtext .= '\n';
                 }
                 $term_type = 2;
             } else if (str_contains('267', $node_type)) {
