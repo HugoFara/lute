@@ -110,17 +110,6 @@ class JapaneseParser {
         $text = $entity->getText();
 
         $text = trim(preg_replace('/[ \t]+/u', ' ', $text));
-        /*
-        TODO: check utility
-        if ($id == -1) {
-            echo '<div id="check_text" style="margin-right:50px;">
-            <h4>Text</h4>
-            <p>' . str_replace("\n", "<br /><br />", tohtml($text)). '</p>'; 
-        } else if ($id == -2) {
-            $text = preg_replace("/[\n]+/u", "\n¶", $text);
-            return explode("\n", $text);
-        }
-        */
 
         $file_name = tempnam(sys_get_temp_dir(), "lute");
         // We use the format "word  num num" for all nodes
@@ -188,23 +177,6 @@ class JapaneseParser {
             $outtext .= ((string) $row[4]) . "\t$term\n";
             $values[] = "(" . implode(",", $row) . ")";
         }
-        /*$this->conn->query(
-            "INSERT INTO temptextitems2 (
-                TiSeID, TiCount, TiOrder, TiText, TiWordCount
-            ) VALUES " . implode(',', $values)
-        );
-        // Delete elements TiOrder=@order
-        $this->conn->query("DELETE FROM temptextitems2 WHERE TiOrder=$order");
-        $this->conn->query(
-            "INSERT INTO temptextitems (
-                TiCount, TiSeID, TiOrder, TiWordCount, TiText
-            ) 
-            SELECT MIN(TiCount) s, TiSeID, TiOrder, TiWordCount, 
-            group_concat(TiText ORDER BY TiCount SEPARATOR '')
-            FROM temptextitems2
-            GROUP BY TiOrder"
-        );
-        $this->conn->query("DROP TABLE temptextitems2");*/
         unlink($file_name);
         return $outtext;
     }
