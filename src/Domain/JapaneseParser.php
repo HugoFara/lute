@@ -134,7 +134,6 @@ class JapaneseParser {
         $handle = fopen($file_name, 'r');
         $mecabed = fread($handle, filesize($file_name));
         fclose($handle);
-        $values = array();
         $order = 0;
         $sid = 1;
         $term_type = 0;
@@ -175,7 +174,6 @@ class JapaneseParser {
             $row[3] = $this->conn->real_escape_string($term); // TiText
             $row[4] = $term_type == 0 ? 1 : 0; // TiWordCount
             $outtext .= ((string) $row[4]) . "\t$term\n";
-            $values[] = "(" . implode(",", $row) . ")";
         }
         unlink($file_name);
         return $outtext;
