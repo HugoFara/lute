@@ -40,20 +40,11 @@ final class JapaneseParser_Test extends DatabaseTestBase
         DbHelpers::assertTableContains($sql, $expected, 'after parse');
     }
 
-
-    // Tests to do:
-
-    /*
     public function test_parse_words_defined()
     {
-        // TODO - load some JP terms here
+        $this->addTerms($this->japanese, [ '私', '元気', 'です' ]);
 
         $t = new Text();
-        $t->setTitle("Hola.");
-        $t->setText("Hola tengo un gato.  No tengo una lista.\nElla tiene una bebida.");
-        $t->setLanguage($this->spanish);
-        $this->text_repo->save($t, true);
-
         $t->setTitle("Test");
         $t->setText("私は元気です.");
         $t->setLanguage($this->japanese);
@@ -61,12 +52,24 @@ final class JapaneseParser_Test extends DatabaseTestBase
 
         $sql = "select ti2woid, ti2seid, ti2order, ti2text from textitems2 where ti2woid > 0 order by ti2order";
         $expected = [
-            "1; 1; 5; un gato",
-            "2; 2; 16; lista",
-            "3; 4; 21; tiene una"
+            "1; 1; 1; 私",
+            "2; 1; 3; 元気",
+            "3; 1; 4; です"
         ];
         DbHelpers::assertTableContains($sql, $expected);
     }
 
-    */
+
+    // Tests to do:
+
+    // carriage returns handled correctly.  e.g:
+    // 私は元気です.
+    // 彼は元気です.
+    // should both be loaded, and there should be a record with carriage returns, eg
+    // "x; y; ¶; ¶",
+
+    // terms already defined in "words" table
+
+    // multi-word terms defined.
+
 }
