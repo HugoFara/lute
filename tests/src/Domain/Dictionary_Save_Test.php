@@ -124,4 +124,19 @@ final class Dictionary_Save_Test extends DatabaseTestBase
         DbHelpers::assertTableContains($sql, $expected, "still associated correctly");
     }
 
+
+    /**
+     * @group japanesemultiword
+     */
+    public function test_save_japanese_multiword_updates_textitems() {
+        $this->make_text("Hi", "私は元気です.", $this->japanese);
+
+        $t = new Term($this->japanese, "元気です");
+        $this->dictionary->add($t, true);
+
+        $sql = "select Ti2WoID, Ti2LgID, Ti2WordCount, Ti2Text from textitems2 where Ti2WoID <> 0 order by Ti2Order";
+        $expected[] = "{$t->getID()}; {$this->japanese->getLgID()}; 2; 元気です";
+        DbHelpers::assertTableContains($sql, $expected, "associated multi-word term");
+    }
+
 }
