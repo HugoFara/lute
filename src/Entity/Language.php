@@ -341,7 +341,10 @@ class Language
             ->setLgDict1URI('https://jisho.org/search/###')
             ->setLgDict2URI('https://www.bing.com/images/search?q=###&form=HDRSC2&first=1&tsc=ImageHoverTitle')
             ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#jp/en/###')
-            ->setLgRegexpWordCharacters('\S')
+            // Ref https://stackoverflow.com/questions/5797505/php-regex-expression-involving-japanese
+            ->setLgRegexpWordCharacters('\p{Han}\p{Katakana}\p{Hiragana}')
+            ->setLgRemoveSpaces(true)
+            ->setLgShowRomanization(true)
             ->setLgParserType('japanese');
         return $japanese;
     }

@@ -127,7 +127,6 @@ where ti2woid = 0";
     {
         $id = $text->getID();
         $lid = $text->getLanguage()->getLgID();
-
         $minmax = "SELECT MIN(SeID) as minseid, MAX(SeID) as maxseid FROM sentences WHERE SeTxID = {$id}";
         $rec = $this->conn
              ->query($minmax)->fetch_array();
@@ -142,7 +141,7 @@ where ti2woid = 0";
         // be for new things added since the last parse date, which
         // currently isn't tracked.
         $sentenceRange = [ $firstSeID, $lastSeID ];
-        $mwordsql = "SELECT * FROM words WHERE WoLgID = $lid AND WoWordCount > 1";
+        $mwordsql = "SELECT WoTextLC, WoID, WoWordCount FROM words WHERE WoLgID = $lid AND WoWordCount > 1";
         $res = $this->conn->query($mwordsql);
         while ($record = mysqli_fetch_assoc($res)) {
             $this->add_multiword_textitems(
@@ -212,8 +211,6 @@ where ti2woid = 0";
         }
 
         $sentences = $this->get_sentences_containing_textlc($lang, $textlc, $sentenceIDRange);
-        // dump("got sentences:");
-        // dump($sentences);
         $this->add_multiword_textitems_for_sentences(
             $sentences, $lang, $textlc, $wid, $wordcount
         );
@@ -240,7 +237,7 @@ where ti2woid = 0";
         if ($matchAll) {
             $method .= '_all';
         }
-        
+
         $n = $method($pattern, $subject, $matchInfo, $flag, $offset);
 
         $result = array();
@@ -286,57 +283,20 @@ where ti2woid = 0";
         $sql = "SELECT * FROM sentences 
             WHERE {$whereSeIDRange}
             SeLgID = $lid AND SeText LIKE concat('%', ?, '%')";
-        // dump($sql);
-
-        if ($removeSpaces == 1 && $splitEachChar == 0) {
-            $sql = "SELECT 
-                group_concat(Ti2Text ORDER BY Ti2Order SEPARATOR ' ') AS SeText, SeID, 
-                SeTxID, SeFirstPos 
-                FROM textitems2, sentences 
-                WHERE {$whereSeIDRange} SeID=Ti2SeID AND SeLgID = $lid AND Ti2LgID = $lid 
-                AND SeText LIKE LIKE concat('%', ?, '%') 
-                AND Ti2WordCount < 2 
-                GROUP BY SeID";
-        }
-
-        $notermchar = "/[^$termchar]({$textlc})[^$termchar]/ui";
-
-        // TODO:japanese This is copied legacy code, but is not tested.
-        // Note that the checks for splitEachChar and removeSpaces
-        // alter the $string and $notermchar regex, but these changes
-        // are not returned to the calling method ... so the calling
-        // method won't be handling these things correctly.  Needs test cases.
-
         $params = [ 's', mysqli_real_escape_string($this->conn, $textlc) ];
 
-        $countsql = "select count(*) as c from ($sql) src";
-        $count = $this->exec_sql($countsql, $params);
-        $record = mysqli_fetch_assoc($count);
-        $c = $record['c'];
-        mysqli_free_result($count);
+        // $countsql = "select count(*) as c from ($sql) src";
+        // $count = $this->exec_sql($countsql, $params);
+        // $record = mysqli_fetch_assoc($count);
+        // $c = $record['c'];
+        // mysqli_free_result($count);
         // dump("got $c sentences matching \"{$textlc}\"");
 
         $res = $this->exec_sql($sql, $params);
         $result = [];
         while ($record = mysqli_fetch_assoc($res)) {
             $string = ' ' . $record['SeText'] . ' ';
-            // dump("checking $string");
-            if ($splitEachChar) {
-                $string = preg_replace('/([^\s])/u', "$1 ", $string);
-            } else if ($removeSpaces == 1) {
-                $ma = $this->pregMatchCapture(
-                    false,
-                    '/(?<=[ ])(' . preg_replace('/(.)/ui', "$1[ ]*", $textlc) . 
-                    ')(?=[ ])/ui', 
-                    $string
-                );
-                if (!empty($ma[1])) {
-                    $textlc = trim($ma[1]);
-                    $notermchar = "/[^$termchar]({$textlc})[^$termchar]/ui";
-                }
-            }
             $last_pos = mb_strripos($string, $textlc, 0, 'UTF-8');
-            // dump("got $last_pos = mb_strripos($string, $textlc, 0, 'UTF-8');");
             if ($last_pos !== false)
                 $result[] = $record;
         }
@@ -357,13 +317,21 @@ where ti2woid = 0";
     {
         $lid = $lang->getLgID();
         $termchar = $lang->getLgRegexpWordCharacters();
-        $notermchar = "/[^$termchar]({$textlc})[^$termchar]/ui";
+        $searchre = "/[^$termchar]({$textlc})[^$termchar]/ui";
+
+        // TODO:japanese - this re is slightly incorrect, because it
+        // is not taking word delimiters into account.  I _believe_
+        // that To handle these correctly, we should include a
+        // zero-length space between each rendered japanese word on
+        // the UI, and those should also be stored in the database,
+        // and included in the Term record as part of the string.
+        if ($lang->isLgRemoveSpaces()) {
+            $searchre = "/({$textlc})/ui";
+        }
 
         foreach ($sentences as $record) {
             $string = ' ' . $record['SeText'] . ' ';
-
-            $rx = $notermchar;
-            $allmatches = $this->pregMatchCapture(true, $notermchar, " $string ");
+            $allmatches = $this->pregMatchCapture(true, $searchre, " $string ");
             $termmatches = [];
             if (count($allmatches) > 0)
                 $termmatches = $allmatches[1];

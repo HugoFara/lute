@@ -132,6 +132,12 @@ final class Dictionary_Save_Test extends DatabaseTestBase
         $this->make_text("Hi", "私は元気です.", $this->japanese);
 
         $t = new Term($this->japanese, "元気です");
+        $t->setWordCount(2); // Required!!!  With JP, we can't tell
+                             // offhand if this is one long word, or a
+                             // join of two.
+
+        // TODO:japanese - if words are separated by a zero-length
+        // space, we _would_ be able to tell how many words there are.
         $this->dictionary->add($t, true);
 
         $sql = "select Ti2WoID, Ti2LgID, Ti2WordCount, Ti2Text from textitems2 where Ti2WoID <> 0 order by Ti2Order";
