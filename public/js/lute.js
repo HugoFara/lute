@@ -111,12 +111,12 @@ function showEditFrame(el, extra_args = {}) {
   const tid = int_attr('tid');
   const ord = int_attr('data_order');
   const text = encodeURIComponent(extra_args.text ?? '-');
-
+  const wordcount = extra_args.wordcount ?? '-';
   let extras = Object.entries(extra_args).
       map((p) => `${p[0]}=${encodeURIComponent(p[1])}`).
       join('&');
 
-  const url = `/read/termform/${wid}/${tid}/${ord}/${text}?${extras}`;
+  const url = `/read/termform/${wid}/${tid}/${ord}/${text}/${wordcount}?${extras}`;
   top.frames.wordframe.location.href = url;
 }
 
@@ -206,7 +206,13 @@ function select_ended(e) {
     return;
   }
 
-  showEditFrame(selection_start_el, { text: text });
+  const selected_words = $("span.word").filter(function() {
+    const ord = $(this).attr("data_order");
+    return ord >= startord && ord <= endord;
+  });
+  const wordcount = selected_words.length;
+
+  showEditFrame(selection_start_el, { text: text, wordcount: wordcount });
   clear_newmultiterm_elements();
 }
 

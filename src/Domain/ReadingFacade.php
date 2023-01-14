@@ -181,11 +181,12 @@ class ReadingFacade {
      * @param tid  int    TxID, text ID
      * @param ord  int    Ti2Order, the order in the text
      * @param text string Multiword text (overrides tid/ord text)
+     * @param wordcount ?int Override value to set for the term wordcount.
      *
      * @return TermDTO
      */
-    public function loadDTO(int $wid = 0, int $tid = 0, int $ord = 0, string $text = ''): TermDTO {
-        $term = $this->repo->load($wid, $tid, $ord, $text);
+    public function loadDTO(int $wid = 0, int $tid = 0, int $ord = 0, string $text = '', ?int $wordcount = null): TermDTO {
+        $term = $this->repo->load($wid, $tid, $ord, $text, $wordcount);
         return $term->createTermDTO();
     }
 

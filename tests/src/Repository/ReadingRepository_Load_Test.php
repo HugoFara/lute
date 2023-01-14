@@ -99,6 +99,9 @@ where ti2order = 25";
     // pass the count of selected tokens on the UI to the load()
     // function; we can't just rely on a simple regex to count the
     // words.
+    /**
+     * @group japanmultiwords
+     */
     public function test_loading_with_specified_wordcount_overrides_the_calculated_wordcount() {
         $t = new Text();
         $t->setTitle("Test");
