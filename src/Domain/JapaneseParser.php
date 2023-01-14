@@ -113,8 +113,7 @@ class JapaneseParser {
 
         $file_name = tempnam(sys_get_temp_dir(), "lute");
         // We use the format "word  num num" for all nodes
-        $mecab_args = " -F %m\\t%t\\t%h\\n -U %m\\t%t\\t%h\\n -E EOP\\t3\\t7\\n";
-        $mecab_args .= " -o $file_name ";
+        $mecab_args = ' -F %m\t%t\t%h\n -U %m\t%t\t%h\n -E EOP\t3\t7\n -o ' . $file_name;
         $mecab = $this->get_mecab_path($mecab_args);
 
         // WARNING: \n is converted to PHP_EOL here!
