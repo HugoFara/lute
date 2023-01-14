@@ -51,19 +51,6 @@ class RomanceLanguageParser {
         foreach ($cleanup as $sql)
             $this->exec_sql($sql);
 
-        $rechars = $text
-                 ->getLanguage()
-                 ->getLgRegexpWordCharacters();
-        $isJapanese = 'MECAB' == strtoupper(trim($rechars));
-        if ($isJapanese) {
-            // TODO:japanese MECAB parsing.
-            throw new \Exception("MECAB parsing not supported");
-            // Ref parse_japanese_text($text, $id)
-            // and insert_expression_from_mecab()
-            // in
-            // https://github.com/HugoFara/lwt/blob/master/inc/database_connect.php
-        }
-
         // TODO:future:2023/02/01 get rid of duplicate processing.
         $cleantext = $this->legacy_clean_standard_text($text);
         $newcleantext = $this->new_clean_standard_text($text);
