@@ -137,7 +137,6 @@ class JapaneseParser {
             if ($term_type == 2 || $term == 'EOP' && $third == '7') {
                 $outtext .= "\r";
             }
-            $last_term_type = $term_type;
             if ($third == '7') {
                 if ($term == 'EOP') {
                     $term = '¶';
