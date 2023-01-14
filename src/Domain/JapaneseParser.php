@@ -35,7 +35,7 @@ class JapaneseParser {
      * Get the full OS-specific mecab command.
      * Returns null if mecab is not installed or on path, or unknown os.
      */
-    private static function MeCab_app(): string
+    private static function MeCab_app(): ?string
     {
         $os = strtoupper(substr(PHP_OS, 0, 3));
         if ($os == 'LIN' || $os == 'DAR') {

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../DatabaseTestBase.php';
 use App\Entity\TermTag;
 use App\Entity\Term;
 use App\Entity\Language;
+use App\Domain\JapaneseParser;
 use App\Entity\Text;
 use App\Domain\Dictionary;
 
@@ -130,6 +131,10 @@ final class Dictionary_Save_Test extends DatabaseTestBase
      * @group japanesemultiword
      */
     public function test_save_japanese_multiword_updates_textitems() {
+        if (!JapaneseParser::MeCab_installed()) {
+            $this->markTestSkipped('Skipping test, missing MeCab.');
+        }
+
         $japanese = Language::makeJapanese();
         $this->language_repo->save($japanese, true);
 

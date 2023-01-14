@@ -12,6 +12,10 @@ final class JapaneseParser_Test extends DatabaseTestBase
 
     public function childSetUp(): void
     {
+        if (!JapaneseParser::MeCab_installed()) {
+            $this->markTestSkipped('Skipping test, missing MeCab.');
+        }
+
         $japanese = Language::makeJapanese();
         $this->language_repo->save($japanese, true);
         $this->japanese = $japanese;

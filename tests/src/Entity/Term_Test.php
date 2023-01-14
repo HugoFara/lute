@@ -4,6 +4,7 @@ namespace tests\App\Entity;
  
 use App\Entity\Term;
 use App\Entity\Language;
+use App\Domain\JapaneseParser;
 use PHPUnit\Framework\TestCase;
  
 class Term_Test extends TestCase
@@ -82,6 +83,10 @@ class Term_Test extends TestCase
      */
     public function test_getWordCount_japanese()
     {
+        if (!JapaneseParser::MeCab_installed()) {
+            $this->markTestSkipped('Skipping test, missing MeCab.');
+        }
+
         $cases = [ "私", "元気", "です" ];
         $jp = Language::makeJapanese();
 

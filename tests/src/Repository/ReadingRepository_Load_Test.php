@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../DatabaseTestBase.php';
 
 use App\Entity\Term;
 use App\Entity\Text;
+use App\Domain\JapaneseParser;
 use App\Entity\Language;
 use App\Repository\TextItemRepository;
 
@@ -104,6 +105,10 @@ where ti2order = 25";
      * @group japanmultiwords
      */
     public function test_loading_with_specified_wordcount_overrides_the_calculated_wordcount() {
+        if (!JapaneseParser::MeCab_installed()) {
+            $this->markTestSkipped('Skipping test, missing MeCab.');
+        }
+
         $japanese = Language::makeJapanese();
         $this->language_repo->save($japanese, true);
 
