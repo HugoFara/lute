@@ -72,18 +72,16 @@ class JapaneseParser {
      * @param string $mecab_args Arguments to add
      *
      * @return string OS-compatible command
-     *
-     * @since 2.3.1-fork Much more verifications added
      */
     function get_mecab_path($mecab_args = ''): string 
     {
         $os = strtoupper(substr(PHP_OS, 0, 3));
         $mecab_args = escapeshellcmd($mecab_args);
-        if ($os == 'LIN') {
+        if ($os == 'LIN' || $os == 'DAR') {
             if (shell_exec("command -v mecab")) {
                 return 'mecab' . $mecab_args; 
             }
-            die("MeCab not detected! Please install it and add it to your PATH.");
+            throw new \Exception("MeCab not installed or not on your PATH");
         }
         if ($os == 'WIN') {
             if (shell_exec('where /R "%ProgramFiles%\\MeCab\\bin" mecab.exe')) { 
@@ -95,9 +93,9 @@ class JapaneseParser {
             if (shell_exec('where mecab.exe')) {
                 return 'mecab.exe' . $mecab_args; 
             }
-            die("MeCab not detected! Install it or add it to the PATH.");
+            throw new \Exception("MeCab not installed or not on your PATH");
         }
-        die("Your OS '$os' cannot use MeCab with this version of LWT!");
+        throw new \Exception("Unknown OS {$os}");
     }
 
     /**
