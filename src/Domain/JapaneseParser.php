@@ -134,10 +134,7 @@ class JapaneseParser {
         $handle = fopen($file_name, 'r');
         $mecabed = fread($handle, filesize($file_name));
         fclose($handle);
-        $order = 0;
-        $sid = 1;
         $term_type = 0;
-        $count = 0;
         $row = array(0, 0, 0, "", 0);
         $outtext = "";
         foreach (explode(PHP_EOL, $mecabed) as $line) {
@@ -148,13 +145,8 @@ class JapaneseParser {
 
             list($term, $node_type, $third) = explode(mb_chr(9), $line);
             if ($term_type == 2 || $term == 'EOP' && $third == '7') {
-                $sid += 1;
                 $outtext .= "\r";
             }
-            $row[0] = $sid; // TiSeID
-            $row[1] = $count + 1; // TiCount
-            $count += mb_strlen($term);
-            //$outtext .= (string) mb_strlen($term);
             $last_term_type = $term_type;
             if ($third == '7') {
                 if ($term == 'EOP') {
@@ -168,10 +160,6 @@ class JapaneseParser {
             } else {
                 $term_type = 1;
             }
-            $order += (int)(($term_type == 0) && ($last_term_type == 0)) + 
-            (int)!(($term_type == 1) && ($last_term_type == 1));
-            $row[2] = $order; // TiOrder
-            $row[3] = $this->conn->real_escape_string($term); // TiText
             $row[4] = $term_type == 0 ? 1 : 0; // TiWordCount
             $outtext .= ((string) $row[4]) . "\t$term\n";
         }
