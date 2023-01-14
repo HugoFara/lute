@@ -10,6 +10,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 use App\Domain\RomanceLanguageParser;
+use App\Domain\JapaneseParser;
 
 #[ORM\Entity(repositoryClass: LanguageRepository::class)]
 #[ORM\Table(name: 'languages')]
@@ -275,6 +276,8 @@ class Language
         switch ($this->LgParserType) {
         case 'romance':
             return new RomanceLanguageParser();
+        case 'japanese':
+            return new JapaneseParser();
         default:
             throw new \Exception("Unknown parser type {$this->LgParserType} for {$this->getLgName()}");
         }
@@ -331,12 +334,25 @@ class Language
         return $english;
     }
 
+    public static function makeJapanese() {
+        $japanese = new Language();
+        $japanese
+            ->setLgName('Japanese')
+            ->setLgDict1URI('https://jisho.org/search/###')
+            ->setLgDict2URI('https://www.bing.com/images/search?q=###&form=HDRSC2&first=1&tsc=ImageHoverTitle')
+            ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#jp/en/###')
+            ->setLgRegexpWordCharacters('mecab')
+            ->setLgParserType('japanese');
+        return $japanese;
+    }
+
     public static function getPredefined(): array {
         return [
             Language::makeEnglish(),
             Language::makeFrench(),
             Language::makeGerman(),
             Language::makeSpanish(),
+            Language::makeJapanese(),
         ];
     }
 
