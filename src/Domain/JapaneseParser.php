@@ -126,7 +126,6 @@ class JapaneseParser {
         $mecabed = fread($handle, filesize($file_name));
         fclose($handle);
         $term_type = 0;
-        $row = array(0, 0, 0, "", 0);
         $outtext = "";
         foreach (explode(PHP_EOL, $mecabed) as $line) {
             // Skip blank lines, or the following line's array
@@ -151,8 +150,8 @@ class JapaneseParser {
             } else {
                 $term_type = 1;
             }
-            $row[4] = $term_type == 0 ? 1 : 0; // TiWordCount
-            $outtext .= ((string) $row[4]) . "\t$term\n";
+            $count = $term_type == 0 ? 1 : 0; // TiWordCount
+            $outtext .= ((string) $count) . "\t$term\n";
         }
         unlink($file_name);
         return $outtext;
