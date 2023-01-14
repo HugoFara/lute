@@ -47,7 +47,10 @@ jobs:
           ${{ runner.os }}-php-
 
     - name: Install Dependencies
-      run: composer install --no-progress
+      run: |
+        composer install --no-progress
+        sudo apt-get update -y
+        sudo apt-get install -y mecab mecab-ipadic-utf8
 
     - uses: shogo82148/actions-setup-mysql@v1
       with:
