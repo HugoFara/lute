@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../DatabaseTestBase.php';
 
 use App\Entity\TermTag;
 use App\Entity\Term;
+use App\Entity\Language;
 use App\Entity\Text;
 use App\Domain\Dictionary;
 
@@ -129,9 +130,12 @@ final class Dictionary_Save_Test extends DatabaseTestBase
      * @group japanesemultiword
      */
     public function test_save_japanese_multiword_updates_textitems() {
-        $this->make_text("Hi", "私は元気です.", $this->japanese);
+        $japanese = Language::makeJapanese();
+        $this->language_repo->save($japanese, true);
 
-        $t = new Term($this->japanese, "元気です");
+        $this->make_text("Hi", "私は元気です.", $japanese);
+
+        $t = new Term($japanese, "元気です");
         $t->setWordCount(2); // Required!!!  With JP, we can't tell
                              // offhand if this is one long word, or a
                              // join of two.
@@ -141,7 +145,7 @@ final class Dictionary_Save_Test extends DatabaseTestBase
         $this->dictionary->add($t, true);
 
         $sql = "select Ti2WoID, Ti2LgID, Ti2WordCount, Ti2Text from textitems2 where Ti2WoID <> 0 order by Ti2Order";
-        $expected[] = "{$t->getID()}; {$this->japanese->getLgID()}; 2; 元気です";
+        $expected[] = "{$t->getID()}; {$japanese->getLgID()}; 2; 元気です";
         DbHelpers::assertTableContains($sql, $expected, "associated multi-word term");
     }
 

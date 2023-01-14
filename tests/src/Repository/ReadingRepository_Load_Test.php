@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../DatabaseTestBase.php';
 
 use App\Entity\Term;
 use App\Entity\Text;
+use App\Entity\Language;
 use App\Repository\TextItemRepository;
 
 final class ReadingRepository_Load_Test extends DatabaseTestBase {
@@ -103,10 +104,13 @@ where ti2order = 25";
      * @group japanmultiwords
      */
     public function test_loading_with_specified_wordcount_overrides_the_calculated_wordcount() {
+        $japanese = Language::makeJapanese();
+        $this->language_repo->save($japanese, true);
+
         $t = new Text();
         $t->setTitle("Test");
         $t->setText("私は元気です.");
-        $t->setLanguage($this->japanese);
+        $t->setLanguage($japanese);
         $this->text_repo->save($t, true);
 
         $t = $this->reading_repo->load(0, $t->getID(), 3, '元気です', 2);

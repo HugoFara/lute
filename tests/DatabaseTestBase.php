@@ -110,10 +110,6 @@ abstract class DatabaseTestBase extends WebTestCase
             ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#en/fr/###');
         $this->language_repo->save($english, true);
         $this->english = $english;
-
-        $japanese = Language::makeJapanese();
-        $this->language_repo->save($japanese, true);
-        $this->japanese = $japanese;
     }
 
     public function load_spanish_words(): void

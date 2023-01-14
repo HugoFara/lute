@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../DatabaseTestBase.php';
 
 use App\Domain\JapaneseParser;
 use App\Entity\Text;
+use App\Entity\Language;
 use App\Entity\Term;
 
 final class JapaneseParser_Test extends DatabaseTestBase
@@ -11,7 +12,9 @@ final class JapaneseParser_Test extends DatabaseTestBase
 
     public function childSetUp(): void
     {
-        $this->load_languages();
+        $japanese = Language::makeJapanese();
+        $this->language_repo->save($japanese, true);
+        $this->japanese = $japanese;
     }
 
     public function tearDown(): void
