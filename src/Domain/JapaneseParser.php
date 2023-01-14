@@ -10,8 +10,52 @@ use App\Utils\Connection;
 
 class JapaneseParser {
 
+    /** Checking MeCab **/
+
+    public static function MeCab_installed(): bool
+    {
+        $p = JapaneseParser::MeCab_app();
+        return ($p != null);
+    }
+
+
+    public static function MeCab_command(string $args): string
+    {
+        if (! JapaneseParser::MeCab_installed()) {
+            $os = strtoupper(substr(PHP_OS, 0, 3));
+            throw new \Exception("MeCab not installed or not on your PATH (OS = {$os})");
+        }
+        $p = JapaneseParser::MeCab_app();
+        $mecab_args = escapeshellcmd($args);
+        return $p . ' ' . $mecab_args;
+    }
+
+
+    /**
+     * Get the full OS-specific mecab command.
+     * Returns null if mecab is not installed or on path, or unknown os.
+     */
+    private static function MeCab_app(): string
+    {
+        $os = strtoupper(substr(PHP_OS, 0, 3));
+        if ($os == 'LIN' || $os == 'DAR') {
+            if (shell_exec("command -v mecab"))
+                return 'mecab'; 
+        }
+        if ($os == 'WIN') {
+            if (shell_exec('where /R "%ProgramFiles%\\MeCab\\bin" mecab.exe'))
+                return '"%ProgramFiles%\\MeCab\\bin\\mecab.exe"';
+            if (shell_exec('where /R "%ProgramFiles(x86)%\\MeCab\\bin" mecab.exe'))
+                return '"%ProgramFiles(x86)%\\MeCab\\bin\\mecab.exe"';
+            if (shell_exec('where mecab.exe'))
+                return 'mecab.exe';
+        }
+        return null;
+    }
+
+
     /** PUBLIC **/
-    
+
     private $conn;
 
     public function __construct()
@@ -22,6 +66,7 @@ class JapaneseParser {
     public function parse(Text $text) {
         $this->parseText($text);
     }
+
 
     /** PRIVATE **/
 
@@ -66,39 +111,6 @@ class JapaneseParser {
 
 
     /**
-     * Returns path to the MeCab application.
-     * MeCab can split Japanese text word by word
-     *
-     * @param string $mecab_args Arguments to add
-     *
-     * @return string OS-compatible command
-     */
-    function get_mecab_path($mecab_args = ''): string 
-    {
-        $os = strtoupper(substr(PHP_OS, 0, 3));
-        $mecab_args = escapeshellcmd($mecab_args);
-        if ($os == 'LIN' || $os == 'DAR') {
-            if (shell_exec("command -v mecab")) {
-                return 'mecab' . $mecab_args; 
-            }
-            throw new \Exception("MeCab not installed or not on your PATH");
-        }
-        if ($os == 'WIN') {
-            if (shell_exec('where /R "%ProgramFiles%\\MeCab\\bin" mecab.exe')) { 
-                return '"%ProgramFiles%\\MeCab\\bin\\mecab.exe"' . $mecab_args;
-            } 
-            if (shell_exec('where /R "%ProgramFiles(x86)%\\MeCab\\bin" mecab.exe')) {
-                return '"%ProgramFiles(x86)%\\MeCab\\bin\\mecab.exe"' . $mecab_args; 
-            }
-            if (shell_exec('where mecab.exe')) {
-                return 'mecab.exe' . $mecab_args; 
-            }
-            throw new \Exception("MeCab not installed or not on your PATH");
-        }
-        throw new \Exception("Unknown OS {$os}");
-    }
-
-    /**
      * Sanitize a Japanese text for insertion in the database.
      * 
      * Separate lines \n, end sentences with \r and gives pairs (charcount\tstring)
@@ -113,8 +125,8 @@ class JapaneseParser {
 
         $file_name = tempnam(sys_get_temp_dir(), "lute");
         // We use the format "word  num num" for all nodes
-        $mecab_args = ' -F %m\t%t\t%h\n -U %m\t%t\t%h\n -E EOP\t3\t7\n -o ' . $file_name;
-        $mecab = $this->get_mecab_path($mecab_args);
+        $mecab_args = '-F %m\t%t\t%h\n -U %m\t%t\t%h\n -E EOP\t3\t7\n -o ' . $file_name;
+        $mecab = JapaneseParser::MeCab_command($mecab_args);
 
         // WARNING: \n is converted to PHP_EOL here!
         $handle = popen($mecab, 'w');
