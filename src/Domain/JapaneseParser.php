@@ -12,16 +12,15 @@ class JapaneseParser {
 
     /** PUBLIC **/
     
-    public static function parse(Text $text) {
-        $p = new JapaneseParser();
-        $p->parseText($text);
-    }
-
     private $conn;
 
     public function __construct()
     {
         $this->conn = Connection::getFromEnvironment();
+    }
+
+    public function parse(Text $text) {
+        $this->parseText($text);
     }
 
     /** PRIVATE **/
