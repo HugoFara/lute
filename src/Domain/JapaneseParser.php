@@ -122,15 +122,6 @@ class JapaneseParser {
         fwrite($handle, $text);
         pclose($handle);
 
-        $this->conn->query(
-            "CREATE TEMPORARY TABLE IF NOT EXISTS temptextitems2 (
-                TiCount smallint(5) unsigned NOT NULL,
-                TiSeID mediumint(8) unsigned NOT NULL,
-                TiOrder smallint(5) unsigned NOT NULL,
-                TiWordCount tinyint(3) unsigned NOT NULL,
-                TiText varchar(250) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL
-            ) DEFAULT CHARSET=utf8"
-        );
         $handle = fopen($file_name, 'r');
         $mecabed = fread($handle, filesize($file_name));
         fclose($handle);
