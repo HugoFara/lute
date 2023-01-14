@@ -133,21 +133,17 @@ class JapaneseParser {
             if (trim($line) == "")
                 continue;
 
-            list($term, $node_type, $third) = explode(mb_chr(9), $line);
-            if ($term_type == 2 || $term == 'EOP' && $third == '7') {
-                $outtext .= "\r";
-            }
-            if ($third == '7') {
-                if ($term == 'EOP') {
-                    $term = '¶';
-                }
-                $term_type = 2;
-            } else if (str_contains('267', $node_type)) {
-                $term_type = 0;
-            } else {
-                $term_type = 1;
-            }
-            $count = $term_type == 0 ? 1 : 0; // TiWordCount
+            $tab = mb_chr(9);
+            list($term, $node_type, $third) = explode($tab, $line);
+
+            $isParagraph = ($term == 'EOP' && $third == '7');
+            if ($isParagraph)
+                $term = "¶\r";
+
+            $count = 0;
+            if (str_contains('267', $node_type))
+                $count = 1;
+
             $outtext .= ((string) $count) . "\t$term\n";
         }
         unlink($file_name);
