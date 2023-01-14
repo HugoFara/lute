@@ -125,7 +125,7 @@ class JapaneseParser {
         $handle = fopen($file_name, 'r');
         $mecabed = fread($handle, filesize($file_name));
         fclose($handle);
-        $term_type = 0;
+
         $outtext = "";
         foreach (explode(PHP_EOL, $mecabed) as $line) {
             // Skip blank lines, or the following line's array
