@@ -3,13 +3,12 @@
 namespace App\Repository;
 
 use App\Entity\Text;
+use App\DTO\TextToken;
+use App\Entity\TextSentence;
 use App\Entity\Term;
 use App\Entity\Sentence;
 use App\Entity\TextItem;
 use App\Entity\Language;
-use App\Domain\Parser;
-use App\Repository\TextItemRepository;
-use App\Domain\TextStatsCache;
 use App\Domain\Dictionary;
 use Doctrine\ORM\EntityManagerInterface;
  
@@ -28,209 +27,91 @@ class ReadingRepository
     )
     {
         $this->manager = $manager;
-        $this->dictionary = new Dictionary($manager);
+        $this->dictionary = new Dictionary($term_repo);
         $this->term_repo = $term_repo;
         $this->lang_repo = $lang_repo;
     }
 
-    public function getTextItems(Text $entity, int $woid = null) {
-        $textid = $textid = $entity->getID();
+    public function getSentences(Text $t): array {
+        $textid = $t->getID();
         if ($textid == null)
             return [];
 
-        $where = [ "Ti2TxID = $textid" ];
-        if ($woid != null)
-            $where[] = "w.WoID = $woid";
-        $where = implode(' AND ', $where);
+        $sql = "select
+          TokSentenceNumber,
+          CONCAT(0xE2808B, GROUP_CONCAT(TokText order by TokOrder SEPARATOR 0xE2808B), 0xE2808B) as SeText
+          FROM texttokens
+          where TokTxID = $textid
+          group by TokSentenceNumber";
 
-        $sql = "SELECT
-           $textid AS TextID,
-           Ti2LgID as LangID,
-           Ti2WordCount AS WordCount,
-           Ti2Text AS Text,
-           Ti2TextLC AS TextLC,
-           Ti2Order AS `Order`,
-           Ti2SeID AS SeID,
-           CASE WHEN Ti2WordCount>0 THEN 1 ELSE 0 END AS IsWord,
-           CHAR_LENGTH(Ti2Text) AS TextLength,
-           w.WoID,
-           w.WoText,
-           w.WoStatus,
-           w.WoTranslation,
-           w.WoRomanization,
-           IF (wordtags IS NULL, '', CONCAT('[', wordtags, ']')) as Tags,
+        // dump($sql);
+        $conn = $this->manager->getConnection();
+        $stmt = $conn->prepare($sql);
+        $res = $stmt->executeQuery();
+        $rows = $res->fetchAllAssociative();
 
-           pw.WoID as ParentWoID,
-           pw.WoTextLC as ParentWoTextLC,
-           pw.WoTranslation as ParentWoTranslation,
-           IF (parenttags IS NULL, '', CONCAT('[', parenttags, ']')) as ParentTags
+        $ret = [];
+        foreach ($rows as $row) {
+            $s = new TextSentence();
+            $s->SeID = intval($row['TokSentenceNumber']);
+            $s->SeText = $row['SeText'];
+            $ret[] = $s;
+        }
+        return $ret;
+    }
 
-           FROM textitems2
-           LEFT JOIN words AS w ON Ti2WoID = w.WoID
-           LEFT JOIN (
-             SELECT
-             WtWoID,
-             GROUP_CONCAT(DISTINCT TgText ORDER BY TgText separator ', ') as wordtags
-             FROM wordtags
-             INNER JOIN tags ON TgID = WtTgID
-             GROUP BY WtWoID
-           ) wordtaglist on wordtaglist.WtWoID = w.WoID
+    public function getTextTokens(Text $t): array {
+        $textid = $t->getID();
+        if ($textid == null)
+            return [];
 
-           LEFT JOIN wordparents ON wordparents.WpWoID = w.WoID
-           LEFT JOIN words AS pw on pw.WoID = wordparents.WpParentWoID
-           LEFT JOIN (
-             SELECT
-             wordparents.WpWoID,
-             GROUP_CONCAT(DISTINCT TgText ORDER BY TgText separator ', ') as parenttags
-             FROM wordtags
-             INNER JOIN tags ON TgID = WtTgID
-             INNER JOIN wordparents on wordparents.WpParentWoID = wordtags.WtWoID
-             GROUP BY WpWoID
-           ) parenttaglist on parenttaglist.WpWoID = w.WoID
-
-           WHERE $where
-           ORDER BY Ti2Order asc, Ti2WordCount desc";
+        $sql = "select
+          TokSentenceNumber,
+          TokOrder,
+          TokIsWord,
+          TokText
+          from texttokens
+          where toktxid = $textid
+          order by TokSentenceNumber, TokOrder";
 
         $conn = $this->manager->getConnection();
         $stmt = $conn->prepare($sql);
         $res = $stmt->executeQuery();
         $rows = $res->fetchAllAssociative();
 
-        $textitems = [];
+        $ret = [];
         foreach ($rows as $row) {
-            $t = new TextItem();
-            foreach ($row as $key => $val) {
-                $t->$key = $val;
-            }
-            $intkeys = [ 'TextID', 'LangID', 'WordCount', 'Order', 'SeID', 'IsWord', 'TextLength', 'WoID', 'WoStatus', 'ParentWoID' ];
-            foreach ($intkeys as $key) {
-                $t->$key = intval($t->$key);
-            }
-            $textitems[] = $t;
+            $tok = new TextToken();
+            $tok->TokSentenceNumber = intval($row['TokSentenceNumber']);
+            $tok->TokOrder = intval($row['TokOrder']);
+            $tok->TokIsWord = intval($row['TokIsWord']);
+            $tok->TokText = $row['TokText'];
+            $ret[] = $tok;
         }
-
-        return $textitems;
-    }
-
-
-    /******************************************/
-    // Loading a Term for the reading pane.
-    //
-    // Loading is rather complex.  It can be done by the Term ID (aka
-    // the 'wid') or the textid and position in the text (the 'tid'
-    // and 'ord'), or it might be a brand new multi-word term
-    // (specified by the 'text').  The integration tests cover these
-    // scenarios in /hopefully/ enough detail.
-
-    /**
-     * Get fully populated Term from database, or create a new one with available data.
-     *
-     * @param wid  int    WoID, an actual ID, or 0 if new.
-     * @param tid  int    TxID, text ID
-     * @param ord  int    Ti2Order, the order in the text
-     * @param text string Multiword text (overrides tid/ord text)
-     *
-     * @return Term
-     */
-    public function load(int $wid = 0, int $tid = 0, int $ord = 0, string $text = ''): Term
-    {
-        $ret = null;
-        if ($wid > 0 && ($text == '' || $text == '-')) {
-            // Use wid, *provided that there is no text specified*.
-            // If there is, the user has mousedown-drag created
-            // a new multiword term.
-            $ret = $this->term_repo->find($wid);
-        }
-        elseif ($text != '') {
-            $language = $this->getTextLanguage($tid);
-            $ret = $this->loadFromText($text, $language);
-        }
-        elseif ($tid != 0 && $ord != 0) {
-            $language = $this->getTextLanguage($tid);
-            $ret = $this->loadFromTidAndOrd($tid, $ord, $language);
-        }
-        else {
-            throw new \Exception("Out of options to search for term");
-        }
-
-        if ($ret->getSentence() == null && $tid != 0 && $ord != 0) {
-            $s = $this->findSentence($tid, $ord);
-            $ret->setSentence($s);
-        }
-
         return $ret;
     }
 
-    private function getTextLanguage($tid): ?Language {
-        $sql = "SELECT TxLgID FROM texts WHERE TxID = {$tid}";
-        $record = $this
-            ->manager
-            ->getConnection()
-            ->executeQuery($sql)
-            ->fetchAssociative();
-        if (! $record) {
-            throw new \Exception("no record for tid = $tid ???");
-        }
-        $lang = $this->lang_repo->find((int) $record['TxLgID']);
-        return $lang;
+    public function getTermsInText(Text $text) {
+        return $this->term_repo->findTermsInText($text);
     }
-    
+
+
     /**
-     * Get baseline data from tid and ord.
+     * Get fully populated Term from database, or create a new one.
      *
-     * @return Term.
+     * @param lid  int    LgID, the language ID
+     * @param text string
+     *
+     * @return Term
      */
-    private function loadFromTidAndOrd($tid, $ord, Language $lang): ?Term {
-        $sql = "SELECT ifnull(WoID, 0) as WoID,
-          Ti2Text AS t
-          FROM textitems2
-          LEFT OUTER JOIN words on WoTextLC = Ti2TextLC
-          WHERE Ti2TxID = {$tid} AND Ti2WordCount = 1 AND Ti2Order = {$ord}";
-        $record = $this
-            ->manager
-            ->getConnection()
-            ->executeQuery($sql)
-            ->fetchAssociative();
-        if (! $record) {
-            throw new \Exception("no matching textitems2 for tid = $tid , ord = $ord");
-        }
-
-        $wid = (int) $record['WoID'];
-        if ($wid > 0) {
-            return $this->term_repo->find($wid);
-        }
-
-        $t = new Term();
-        $t->setText($record['t']);
-        $t->setLanguage($lang);
-        return $t;
-    }
-
-
-    private function loadFromText(string $text, Language $lang): Term {
+    public function load(int $lid, string $text): Term
+    {
+        $language = $this->lang_repo->find($lid);
         $textlc = mb_strtolower($text);
-        $t = $this->dictionary->find($text, $lang);
+        $t = $this->dictionary->find($textlc, $language);
         if (null != $t)
             return $t;
-
-        $t = new Term();
-        $t->setText($text);
-        $t->setLanguage($lang);
-        return $t;
-    }
-
-
-    private function findSentence($tid, $ord) : string {
-        $sql = "select SeText
-           from sentences
-           INNER JOIN textitems2 on Ti2SeID = SeID
-           WHERE Ti2TxID = :tid and Ti2Order = :ord";
-        $params = [ "tid" => $tid, "ord" => $ord ];
-        return $this
-            ->manager
-            ->getConnection()
-            ->executeQuery($sql, $params)
-            ->fetchNumeric()[0];
+        return new Term($language, $textlc);
     }
 
 

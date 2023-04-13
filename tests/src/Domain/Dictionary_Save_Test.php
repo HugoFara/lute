@@ -5,6 +5,8 @@ require_once __DIR__ . '/../../DatabaseTestBase.php';
 
 use App\Entity\TermTag;
 use App\Entity\Term;
+use App\Entity\Language;
+use App\Domain\JapaneseParser;
 use App\Entity\Text;
 use App\Domain\Dictionary;
 
@@ -18,190 +20,121 @@ final class Dictionary_Save_Test extends DatabaseTestBase
     private Term $p2;
 
     public function childSetUp() {
-        $this->dictionary = new Dictionary($this->entity_manager);
+        $this->dictionary = new Dictionary($this->term_repo);
         $this->load_languages();
-
-        $tag = new TermTag();
-        $tag->setText("tag");
-        $tag->setComment("tag comment");
-        $this->termtag_repo->save($tag, true);
-        $this->tag = $tag;
-
-        $p = new Term();
-        $p->setLanguage($this->spanish);
-        $p->setText("PARENT");
-        $p->setStatus(1);
-        $p->setWordCount(1);
-        $this->dictionary->add($p, true);
-        $this->p = $p;
-
-        $p2 = new Term();
-        $p2->setLanguage($this->spanish);
-        $p2->setText("OTHER");
-        $p2->setStatus(1);
-        $p2->setWordCount(1);
-        $this->dictionary->add($p2, true);
-        $this->p2 = $p2;
-    }
-
-    public function test_create_and_save()
-    {
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("HOLA");
-        $t->setStatus(1);
-        $t->setWordCount(1);
-        $t->setTranslation('hi');
-        $t->setRomanization('ho-la');
-        $this->dictionary->add($t, true);
-
-        $this->assertEquals($t->getTextLC(), 'hola', "sanity check of case");
-
-        $sql = "select WoText, WoTextLC from words where WoID={$t->getID()}";
-        $expected = [ "HOLA; hola" ];
-        DbHelpers::assertTableContains($sql, $expected, "sanity check on save");
-    }
-
-    public function test_saving_updates_textitems2_in_same_language() {
-        DbHelpers::add_textitems2($this->spanish->getLgID(), 'hoLA', 'hola', 1);
-        DbHelpers::add_textitems2($this->french->getLgID(), 'HOLA', 'hola', 2);
-
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("HOLA");
-        $t->setStatus(1);
-        $t->setWordCount(1);
-        $t->setTranslation('hi');
-        $t->setRomanization('ho-la');
-        $this->dictionary->add($t, true);
-
-        $sql = "select Ti2WoID, Ti2LgID, Ti2Text from textitems2 order by Ti2LgID";
-        $expected = [
-            "{$t->getID()}; {$this->spanish->getLgID()}; hoLA",
-            "0; {$this->french->getLgID()}; HOLA"
-        ];
-        DbHelpers::assertTableContains($sql, $expected, "sanity check on save");
-    }
-
-    public function test_word_with_parent_and_tags()
-    {
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("HOLA");
-        $t->setStatus(1);
-        $t->setWordCount(1);
-        $t->setParent($this->p);
-        $t->addTermTag($this->tag);
-        $this->dictionary->add($t, true);
-
-        $sql = "select WoID, WoText, WoTextLC from words";
-        $expected = [ "1; PARENT; parent", "2; OTHER; other", "3; HOLA; hola" ];
-        DbHelpers::assertTableContains($sql, $expected, "sanity check on save");
-
-        // Hacky sql check.
-        $sql = "select w.WoText, p.WoText as ptext, tags.TgText 
-            FROM words w
-            INNER JOIN wordparents on WpWoID = w.WoID
-            INNER JOIN words p on p.WoID = wordparents.WpParentWoID
-            INNER JOIN wordtags on WtWoID = w.WoID
-            INNER JOIN tags on TgID = WtTgID";
-        $exp = [ "HOLA; PARENT; tag" ];
-        DbHelpers::assertTableContains($sql, $exp, "parents, tags");
-    }
-
-    public function test_change_parent()
-    {
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("HOLA");
-        $t->setStatus(1);
-        $t->setWordCount(1);
-        $t->setParent($this->p);
-        $this->dictionary->add($t, true);
-
-        // Hacky sql check.
-        $sql = "select w.WoText, p.WoText as ptext
-            FROM words w
-            LEFT JOIN wordparents on WpWoID = w.WoID
-            LEFT JOIN words p on p.WoID = wordparents.WpParentWoID
-            WHERE w.WoID = {$t->getID()}";
-        $exp = [ "HOLA; PARENT" ];
-        DbHelpers::assertTableContains($sql, $exp, "parents, tags");
-
-        $t->setParent($this->p2);
-        $this->dictionary->add($t, true);
-        $exp = [ "HOLA; OTHER" ];
-        DbHelpers::assertTableContains($sql, $exp, "parents changed, tags");
-    }
-
-    public function test_remove_parent()
-    {
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("HOLA");
-        $t->setStatus(1);
-        $t->setWordCount(1);
-        $t->setParent($this->p);
-        $this->dictionary->add($t, true);
-
-        // Hacky sql check.
-        $sql = "select w.WoText, p.WoText as ptext
-            FROM words w
-            LEFT JOIN wordparents on WpWoID = w.WoID
-            LEFT JOIN words p on p.WoID = wordparents.WpParentWoID
-            WHERE w.WoID = {$t->getID()}";
-        $exp = [ "HOLA; PARENT" ];
-        DbHelpers::assertTableContains($sql, $exp, "parents, tags");
-
-        $t->setParent(null);
-        $this->dictionary->add($t, true);
-        $exp = [ "HOLA; " ];
-        DbHelpers::assertTableContains($sql, $exp, "parent removed, tags");
     }
 
 
     public function test_add_updates_associated_textitems() {
-        $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
+        $st = $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
+        $ft = $this->make_text("Bonj.", "Je veux un tengo.", $this->french);
+
+        $t = new Term($this->spanish, "tengo");
+        $this->dictionary->add($t, true);
+
+        $this->assert_rendered_text_equals($st, "Hola/ /tengo(1)/ /un/ /gato/.");
+        $this->assert_rendered_text_equals($ft, "Je/ /veux/ /un/ /tengo/.");
+
+        $t = new Term($this->spanish, "un gato");
+        $this->dictionary->add($t, true);
+        $this->assert_rendered_text_equals($st, "Hola/ /tengo(1)/ /un gato(1)/.");
+    }
+
+
+    public function test_textitems_not_associated_until_flush() {
+        $st = $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
+
+        $t1 = new Term($this->spanish, "tengo");
+        $t2 = new Term($this->spanish, "un gato");
+
+        $this->dictionary->add($t1, false);
+        $this->dictionary->add($t2, false);
+
+        $this->assert_rendered_text_equals($st, "Hola/ /tengo/ /un/ /gato/.");
+
+        $this->dictionary->flush();
+        $this->assert_rendered_text_equals($st, "Hola/ /tengo(1)/ /un gato(1)/.");
+    }
+
+
+    /**
+     * @group mwordparent
+     */
+    public function test_multiword_parent_item_associated() {
+        $t = $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
+
+        $t1 = new Term($this->spanish, "tengo");
+        $t2 = new Term($this->spanish, "un gato");
+        $t1->setParent($t2);
+
+        $this->assert_rendered_text_equals($t, "Hola/ /tengo/ /un/ /gato/.");
+
+        $this->dictionary->add($t1, false);
+
+        $this->dictionary->flush();
+        $this->assert_rendered_text_equals($t, "Hola/ /tengo(1)/ /un gato(1)/.");
+    }
+
+
+    /**
+     * @group zws
+     */
+    public function test_textitems_un_associated_after_remove() {
+        $t = $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
         $this->make_text("Bonj.", "Je veux un tengo.", $this->french);
 
-        DbHelpers::assertRecordcountEquals("textitems2", 16, 'sanity check');
-        $sql = "select Ti2WoID, Ti2LgID, Ti2WordCount, Ti2Text from textitems2 where Ti2WoID <> 0 order by Ti2Order";
-        DbHelpers::assertTableContains($sql, [], "No associations");
+        $this->assert_rendered_text_equals($t, "Hola/ /tengo/ /un/ /gato/.");
 
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("tengo");
-        $this->dictionary->add($t, true);
-        $expected = [ "{$t->getID()}; 1; 1; tengo" ];
-        DbHelpers::assertTableContains($sql, $expected, "_NOW_ associated spanish text");
+        $t1 = new Term($this->spanish, "tengo");
+        $t2 = new Term($this->spanish, "un gato");
+        $this->dictionary->add($t1, false);
+        $this->dictionary->add($t2, false);
+        $this->dictionary->flush();
 
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText("un gato");
-        $this->dictionary->add($t, true);
+        $this->assert_rendered_text_equals($t, "Hola/ /tengo(1)/ /un gato(1)/.");
 
-        $expected[] = "{$t->getID()}; 1; 2; un gato";
-        DbHelpers::assertTableContains($sql, $expected, "associated multi-word term");
+        $this->dictionary->remove($t1, false);
+        $this->dictionary->remove($t2, false);
+        $this->dictionary->flush();
+        $this->assert_rendered_text_equals($t, "Hola/ /tengo/ /un/ /gato/.");
     }
 
 
     // Production bug.
     public function test_save_multiword_term_multiple_times_is_ok() {
-        $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
+        $text = $this->make_text("Hola.", "Hola tengo un gato.", $this->spanish);
 
         $t = new Term();
         $t->setLanguage($this->spanish);
         $t->setText("un gato");
         $this->dictionary->add($t, true);
-
-        $sql = "select Ti2WoID, Ti2LgID, Ti2WordCount, Ti2Text from textitems2 where Ti2WoID <> 0 order by Ti2Order";
-        $expected[] = "{$t->getID()}; 1; 2; un gato";
-        DbHelpers::assertTableContains($sql, $expected, "associated multi-word term");
+        $this->assert_rendered_text_equals($text, "Hola/ /tengo/ /un gato(1)/.");
 
         // Update and resave
         $t->setStatus(5);
         $this->dictionary->add($t, true);
-        DbHelpers::assertTableContains($sql, $expected, "still associated correctly");
+        $this->assert_rendered_text_equals($text, "Hola/ /tengo/ /un gato(5)/.");
+    }
+
+
+    /**
+     * @group japanesemultiword
+     */
+    public function test_save_japanese_multiword_updates_textitems() {
+        if (!JapaneseParser::MeCab_installed()) {
+            $this->markTestSkipped('Skipping test, missing MeCab.');
+        }
+
+        $japanese = Language::makeJapanese();
+        $this->language_repo->save($japanese, true);
+
+        $text = $this->make_text("Hi", "私は元気です.", $japanese);
+        $this->assert_rendered_text_equals($text, "私/は/元気/です/./¶");
+        
+        $term = new Term($japanese, "元気です");
+        $this->dictionary->add($term, true);
+
+        $this->assert_rendered_text_equals($text, "私/は/元気です(1)/./¶");
     }
 
 }

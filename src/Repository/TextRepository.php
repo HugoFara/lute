@@ -5,8 +5,6 @@ namespace App\Repository;
 use App\Entity\Text;
 use App\Entity\Sentence;
 use App\Entity\TextItem;
-use App\Domain\Parser;
-use App\Domain\TextStatsCache;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -26,30 +24,26 @@ class TextRepository extends ServiceEntityRepository
         parent::__construct($registry, Text::class);
     }
 
-    private function removeSentencesAndWords(int $textid): void
+    private function exec_sql(string $sql): void
     {
         $conn = $this->getEntityManager()->getConnection();
-        $sqls = [
-            "delete from sentences where SeTxID = $textid",
-            "delete from textitems2 where Ti2TxID = $textid"
-        ];
-        foreach ($sqls as $sql) {
-            $stmt = $conn->prepare($sql);
-            $stmt->executeQuery();
-        }
+        $stmt = $conn->prepare($sql);
+        $stmt->executeQuery();
     }
 
-    public function save(Text $entity, bool $flush = false, bool $parseTexts = true): void
+    private function removeSentences(int $textid): void
+    {
+        $this->exec_sql("delete from sentences where SeTxID = $textid");
+    }
+
+    public function save(Text $entity, bool $flush = false): void
     {
         $this->getEntityManager()->persist($entity);
-
+        $tid = $entity->getId();
         if ($flush) {
             $this->getEntityManager()->flush();
-            $this->removeSentencesAndWords($entity->getID());
-
-            if (! $entity->isArchived() && $parseTexts ) {
-                TextStatsCache::markStale([$entity->getID()]);
-                Parser::parse($entity);
+            if (! $entity->isArchived()) {
+                $entity->parse();
             }
         }
     }
@@ -61,66 +55,31 @@ class TextRepository extends ServiceEntityRepository
 
         if ($flush) {
             $this->getEntityManager()->flush();
-            $this->removeSentencesAndWords($textid);
+            $this->removeSentences($textid);
         }
     }
 
 
-    /** Returns data for ajax paging. */
-    public function getDataTablesList($parameters, $archived = false) {
-
-        // Required, can't interpolate a bool in the sql string.
-        $archived = $archived ? 'true' : 'false';
-
-        $base_sql = "SELECT
-          t.TxID As TxID,
-          LgName,
-          TxTitle,
-          TxArchived,
-          tags.taglist AS TagList,
-          CONCAT(c.distinctterms, ' / ', c.sUnk) as TermStats,
-          c.wordcount as WordCount,
-          c.sUnk as Unknown,
-          c.s1 + c.s2 as Learn1_2,
-          c.s3 + c.s4 as Learn3_4,
-          c.s5 as Learn5,
-          c.sWkn as WellKnown
-
-          FROM texts t
-          INNER JOIN languages on LgID = t.TxLgID
-          LEFT OUTER JOIN textstatscache c on c.TxID = t.TxID
-
-          LEFT OUTER JOIN (
-            SELECT TtTxID as TxID, GROUP_CONCAT(T2Text ORDER BY T2Text SEPARATOR ', ') AS taglist
-            FROM
-            texttags tt
-            INNER JOIN tags2 t2 on t2.T2ID = tt.TtT2ID
-            GROUP BY TtTxID
-          ) AS tags on tags.TxID = t.TxID
-
-          WHERE t.TxArchived = $archived";
-
-        $conn = $this->getEntityManager()->getConnection();
-        
-        return DataTablesMySqlQuery::getData($base_sql, $parameters, $conn);
-    }
-
-
-    private function get_prev_or_next(Text $text, bool $getprev = true) {
-        $op = $getprev ? " < " : " > ";
+    private function get_prev_or_next(Text $text, int $offset = 1, bool $getprev = true) {
+        $op = $getprev ? " <= " : " >= ";
         $sortorder = $getprev ? " desc " : "";
+        $bkid = $text->getBook()->getId();
+        $useoffset = $offset;
+        if ($getprev)
+            $useoffset = -1 * $useoffset;
+        $targetorder = $text->getOrder() + $useoffset;
+        if ($text->getOrder() > 1 && $targetorder < 1)
+            $targetorder = 1;
 
         // DQL can be -- non-intuitive.
         // Leaving this for now b/c it works, but I'd prefer regular SQL.
         $dql = "SELECT t FROM App\Entity\Text t
-        JOIN App\Entity\Language L WITH L = t.language
-        WHERE L.LgID = :langid AND t.TxID $op :currid
-        ORDER BY t.TxID $sortorder";
+        JOIN App\Entity\Book b WITH b = t.book
+        WHERE b.BkID = $bkid AND t.TxOrder $op $targetorder
+        ORDER BY t.TxOrder $sortorder";
 
         $query = $this->getEntityManager()
                ->createQuery($dql)
-               ->setParameter('langid', $text->getLanguage()->getLgID())
-               ->setParameter('currid', $text->getID())
                ->setMaxResults(1);
         $texts = $query->getResult();
 
@@ -131,10 +90,15 @@ class TextRepository extends ServiceEntityRepository
 
     
     public function get_prev_next(Text $text) {
-        $p = $this->get_prev_or_next($text, true);
-        $n = $this->get_prev_or_next($text, false);
+        $p = $this->get_prev_or_next($text, 1, true);
+        $n = $this->get_prev_or_next($text, 1, false);
         return [ $p, $n ];
     }
 
+    public function get_prev_next_by_10(Text $text) {
+        $p = $this->get_prev_or_next($text, 10, true);
+        $n = $this->get_prev_or_next($text, 10, false);
+        return [ $p, $n ];
+    }
 
 }

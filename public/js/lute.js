@@ -16,100 +16,115 @@ function prepareTextInteractions(textid) {
   $(document).on('keydown', handle_keydown);
 
   $('#thetext').tooltip({
-    position: { my: 'left top+10', at: 'left bottom', collision: 'flipfit' },
-    items: '.hword',
+    position: { my: 'left top+10', at: 'left bottom', collision: 'flipfit flip' },
+    items: '.word.showtooltip',
     show: { easing: 'easeOutCirc' },
-    content: function () { return tooltip_textitem_content($(this)); }
+    content: function () { return tooltip_textitem_hover_content($(this)); }
   });
 
-  $('#thetext').hoverIntent(
-    {
-      over: word_hover_over, 
-      out: word_hover_out, 
-      interval: 150, 
-      selector:".word:not(.status0)"
+}
+
+
+/**
+ * Build the html content for jquery-ui tooltip.
+ */
+let tooltip_textitem_hover_content = function (el) {
+
+  let tooltip_title = function() {
+    let t = el.text();
+    const parent_text = el.attr('parent_text') ?? '';
+    if (parent_text != '')
+      t = `${t} (${parent_text})`;
+    return t;
+  }
+
+  const status_span = function() {
+    const status = parseInt(el.attr('data_status'));
+    const st = STATUSES[status];
+    const statname = `[${st['abbr']}]`;
+    return `<span style="margin-left: 12px; float: right;" class="status${status}">${statname}</span>`;
+  }
+
+  let image_if_src = function(el, attr) {
+    const filename = el.attr(attr) ?? '';
+    if (filename == '')
+      return '';
+    return `<img class="tooltip-image" src="${filename}" />`;
+  }
+
+  let tooltip_images = function() {
+    const images = [ 'data_img_src', 'parent_img_src' ].
+          map(s => image_if_src(el, s));
+    const unique = (value, index, self) => {
+      return self.indexOf(value) === index
     }
-  );
-
-}
-
-let word_hover_over = function() {
-  $(this).addClass('hword');
-  $(this).trigger('mouseover');
-}
-
-let word_hover_out = function() {
-  $('.hword').removeClass('hword');
-  $('.ui-helper-hidden-accessible>div[style]').remove();
-}
-
-
-let add_image_if_exists = function(langid, text) {
-  const url = `/bing/get/${langid}/${encodeURIComponent(text)}`;
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', url, false); // false = *not* asynchronous.
-  xhr.send();
-
-  const filename = xhr.response;
-  // console.log('got filename = ' + filename);
-  if (filename == '""')
-    return '';
-  return `<p><img src="${JSON.parse(filename)}" /></p>`;
-}
-
-
-let tooltip_textitem_content = function (el) {
-  let content = `<p><b style="font-size:120%">${el.text()}</b></p>`;
-
-  const roman = el.attr('data_rom');
-  if (roman != '') {
-    content += '<p><b>Roman.</b>: ' + roman + '</p>';
+    const unique_images = images.filter(unique).join(' ');
+    if (unique_images == ' ')
+      return '';
+    return `<p>${unique_images}</p>`;
   }
 
-  const lid = parseInt(el.attr('lid'));
-  content += add_image_if_exists(lid, el.text());
-
-  const trans = el.attr('data_trans');
-  if (trans != '' && trans != '*') {
-    content += '<p><b>Transl.</b>: ' + trans + '</p>';
+  let build_entry = function(term, transl, roman, tags) {
+    let have_val = (v) => v != null && `${v}`.trim() != '';
+    if (!have_val(term))
+      return '';
+    let ret = [ `<b>${term}</b>` ];
+    if (have_val(roman))
+      ret.push(` <i>(${roman})</i>`);
+    if (have_val(transl))
+      ret.push(`: ${transl}`);
+    if (have_val(tags))
+      ret.push(` [${tags}]`);
+    return `<p>${ret.join('')}</p>`;
   }
 
-  const status = parseInt(el.attr('data_status'));
-  const st = STATUSES[status];
-  const statname = `${st['name']} [${st['abbr']}]`;
-  content += `<p><b>Status</b>: <span class="status${status}">${statname}</span></p>`;
+  let get_attr = a => (el.attr(a) ?? '').
+      trim().
+      replace(/(\r\n|\n|\r)/gm, "<br />");  // Some translations have cr/lf.
+  ptrans = get_attr('parent_trans');
+  ctrans = get_attr('data_trans');
+  ctags = get_attr('data_tags');
 
-  const parent_text = el.attr('parent_text')
-  if (parent_text && parent_text != '') {
-    content += '<hr /><p><i>Parent term:</i></p>';
-    content += `<p><b style='font-size:120%'>${parent_text}</b></p>`;
-    content += add_image_if_exists(lid, parent_text);
-    let ptrans = el.attr('parent_trans');
-    content += '<p><b>Transl.</b>: ' + ptrans + '</p>';
+  let translation_content = ctrans;
+  if (ctags != '') {
+    translation_content = `${translation_content} [${ctags}]`;
+  }
+  if (ptrans != '' && ctrans != '' && ctrans != ptrans) {
+    // show both.
+    translation_content = [
+      build_entry(el.text(), ctrans, el.attr('data_rom'), el.attr('data_tags')),
+      build_entry(el.attr('parent_text'), ptrans, null, el.attr('parent_tags'))
+    ].join('');
+  }
+  if (ptrans != '' && ctrans == '') {
+    translation_content = build_entry(el.attr('parent_text'), ptrans, null, el.attr('parent_tags'));
   }
 
+  let content = `<p><b style="font-size:120%">${tooltip_title()}</b>${status_span()}</p>`;
+  const rom = get_attr('data_rom');
+  if (rom != '')
+    content += `<p><i>${rom}</i></p>`;
+  content += translation_content;
+  content += tooltip_images();
   return content;
 }
 
 
 function showEditFrame(el, extra_args = {}) {
+  const lid = parseInt(el.attr('lid'));
 
-  const int_attr = function(name) {
-    let ret = el.attr(name);
-    if (!ret || ret == '')
-      return 0;
-    return parseInt(ret);
-  };
-  const wid = int_attr('data_wid');
-  const tid = int_attr('tid');
-  const ord = int_attr('data_order');
-  const text = encodeURIComponent(extra_args.text ?? '-');
+  // Join the words together so they can be sent in the URL
+  // string, but in such a way that the string can be "safely"
+  // disassembled on the server back into the component words.
+  const zeroWidthSpace = '\u200b';
+  let text = extra_args.textparts ?? [ el.text() ];
+  const sendtext = text.join(zeroWidthSpace);
 
   let extras = Object.entries(extra_args).
       map((p) => `${p[0]}=${encodeURIComponent(p[1])}`).
       join('&');
 
-  const url = `/read/termform/${wid}/${tid}/${ord}/${text}?${extras}`;
+  const url = `/read/termform/${lid}/${sendtext}?${extras}`;
   top.frames.wordframe.location.href = url;
 }
 
@@ -191,15 +206,16 @@ function select_ended(e) {
     const ord = $(this).attr("data_order");
     return ord >= startord && ord <= endord;
   });
-  const text = selected.toArray().map((el) => $(el).text()).join('').trim();
+  const textparts = selected.toArray().map((el) => $(el).text());
 
+  const text = textparts.join('').trim();
   if (text.length > 250) {
     alert(`Selections can be max length 250 chars ("${text}" is ${text.length} chars)`);
     clear_newmultiterm_elements();
     return;
   }
 
-  showEditFrame(selection_start_el, { text: text });
+  showEditFrame(selection_start_el, { textparts: textparts });
   clear_newmultiterm_elements();
 }
 

@@ -24,9 +24,15 @@ class TermDTO
 
     public ?string $Sentence = null;
 
+    public ?int $WordCount = null;
+
     public array $termTags;
 
     public ?string $ParentText = null;
+
+    public ?int $ParentID = null;
+
+    public ?string $CurrentImage = null;
 
     public function __construct()
     {
@@ -56,12 +62,17 @@ class TermDTO
         $t->setTranslation($dto->Translation);
         $t->setRomanization($dto->Romanization);
         $t->setSentence($dto->Sentence);
+        if ($dto->WordCount != null)
+            $t->setWordCount($dto->WordCount);
+        $t->setCurrentImage($dto->CurrentImage);
 
         $termtags = array();
         foreach ($dto->termTags as $s) {
             $termtags[] = $ttr->findOrCreateByText($s);
         }
 
+        if ($dto->ParentText == $dto->Text)
+            $dto->ParentText = null;
         $parent = TermDTO::findOrCreateParent($dto, $dictionary, $termtags);
         $t->setParent($parent);
 
@@ -81,14 +92,20 @@ class TermDTO
 
         $p = $dictionary->find($pt, $dto->language);
 
-        if ($p !== null)
+        if ($p !== null) {
+            if (($p->getTranslation() ?? '') == '')
+                $p->setTranslation($dto->Translation);
+            if (($p->getCurrentImage() ?? '') == '')
+                $p->setCurrentImage($dto->CurrentImage);
             return $p;
+        }
 
         $p = new Term();
-        $p->setText($pt);
         $p->setLanguage($dto->language);
+        $p->setText($pt);
         $p->setStatus($dto->Status);
         $p->setTranslation($dto->Translation);
+        $p->setCurrentImage($dto->CurrentImage);
         $p->setSentence($dto->Romanization);
         foreach ($termtags as $tt)
             $p->addTermTag($tt);

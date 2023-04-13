@@ -18,7 +18,7 @@ class Term
     #[ORM\Column(name: 'WoID', type: Types::SMALLINT)]
     private ?int $id = null;
 
-    #[ORM\ManyToOne(targetEntity: 'Language', inversedBy: 'terms', fetch: 'EAGER')]
+    #[ORM\ManyToOne(targetEntity: 'Language', inversedBy: 'terms', fetch: 'LAZY')]
     #[ORM\JoinColumn(name: 'WoLgID', referencedColumnName: 'LgID', nullable: false)]
     private ?Language $language = null;
 
@@ -43,27 +43,43 @@ class Term
     #[ORM\Column(name: 'WoWordCount', type: Types::SMALLINT)]
     private ?int $WoWordCount = null;
 
+    #[ORM\Column(name: 'WoTokenCount', type: Types::SMALLINT)]
+    private ?int $WoTokenCount = null;
+
     #[ORM\JoinTable(name: 'wordtags')]
     #[ORM\JoinColumn(name: 'WtWoID', referencedColumnName: 'WoID')]
     #[ORM\InverseJoinColumn(name: 'WtTgID', referencedColumnName: 'TgID')]
-    #[ORM\ManyToMany(targetEntity: TermTag::class, cascade: ['persist'])]
+    #[ORM\ManyToMany(targetEntity: TermTag::class, cascade: ['persist'], fetch: 'EAGER')]
     private Collection $termTags;
 
     #[ORM\JoinTable(name: 'wordparents')]
     #[ORM\JoinColumn(name: 'WpWoID', referencedColumnName: 'WoID')]
     #[ORM\InverseJoinColumn(name: 'WpParentWoID', referencedColumnName: 'WoID')]
-    #[ORM\ManyToMany(targetEntity: Term::class, cascade: ['persist'])]
+    #[ORM\ManyToMany(targetEntity: Term::class, inversedBy:'children', cascade: ['persist'], fetch: 'EAGER')]
     private Collection $parents;
     /* Really, a word can have only one parent, but since we have a
        join table, I'll treat it like a many-to-many join in the
        private members, but the interface will only have setParent()
        and getParent(). */
 
+    #[ORM\JoinTable(name: 'wordparents')]
+    #[ORM\JoinColumn(name: 'WpParentWoID', referencedColumnName: 'WoID')]
+    #[ORM\InverseJoinColumn(name: 'WpWoID', referencedColumnName: 'WoID')]
+    #[ORM\ManyToMany(targetEntity: Term::class, mappedBy:'parents', cascade: ['persist'], fetch: 'EXTRA_LAZY')]
+    private Collection $children;
+
+    #[ORM\OneToMany(targetEntity: 'TermImage', mappedBy: 'term', fetch: 'EAGER', orphanRemoval: true, cascade: ['persist', 'remove'])]
+    #[ORM\JoinColumn(name: 'WiWoID', referencedColumnName: 'WoID', nullable: false)]
+    private Collection $images;
+    /* Currently, a word can only have one image. */
+
 
     public function __construct(?Language $lang = null, ?string $text = null)
     {
         $this->termTags = new ArrayCollection();
         $this->parents = new ArrayCollection();
+        $this->children = new ArrayCollection();
+        $this->images = new ArrayCollection();
 
         if ($lang != null)
             $this->setLanguage($lang);
@@ -90,21 +106,34 @@ class Term
 
     public function setText(string $WoText): self
     {
-        $parts = mb_split("\s+", $WoText);
-        $testlen = function($p) { return mb_strlen($p) > 0; };
-        $realparts = array_filter($parts, $testlen);
-        $cleanword = implode(' ', $realparts);
+        if ($this->language == null)
+            throw new \Exception("Must do Term->setLanguage() before setText()");
 
-        $text_changed = $this->WoText != null && $this->WoText != $cleanword;
+        $t = trim($WoText);
+        $zws = mb_chr(0x200B); // zero-width space.
+        $t = str_replace($zws, '', $t);
+        $tokens = $this->getLanguage()->getParsedTokens($t);
+
+        // Terms can't contain paragraph markers.
+        $isNotPara = function($tok) {
+            return $tok->token !== "¶";
+        };
+        $tokens = array_filter($tokens, $isNotPara);
+        $tokstrings = array_map(fn($tok) => $tok->token, $tokens);
+
+        $t = implode($zws, $tokstrings);
+
+        $text_changed = $this->WoText != null && $this->WoText != $t;
         if ($this->id != null && $text_changed) {
             $msg = "Cannot change text of term '{$this->WoText}' (id = {$this->id}) once saved.";
             throw new \Exception($msg);
         }
 
-        $this->WoText = $cleanword;
-        $this->WoTextLC = mb_strtolower($cleanword);
+        $this->WoText = $t;
+        $this->WoTextLC = mb_strtolower($t);
 
         $this->calcWordCount();
+        $this->calcTokenCount();
         return $this;
     }
 
@@ -118,6 +147,16 @@ class Term
                 $wc = count($matches[0]);
         }
         $this->setWordCount($wc);
+    }
+
+    private function calcTokenCount() {
+        $tc = 0;
+        $zws = mb_chr(0x200B); // zero-width space.
+        if ($this->WoText != null) {
+            $parts = explode($zws, $this->WoText);
+            $tc = count($parts);
+        }
+        $this->setTokenCount($tc);
     }
 
     public function getText(): ?string
@@ -151,7 +190,18 @@ class Term
     {
         return $this->WoWordCount;
     }
-    
+
+    public function setTokenCount(?int $n): self
+    {
+        $this->WoTokenCount = $n;
+        return $this;
+    }
+
+    public function getTokenCount(): ?int
+    {
+        return $this->WoTokenCount;
+    }
+
     public function setTranslation(?string $WoTranslation): self
     {
         $this->WoTranslation = $WoTranslation;
@@ -219,23 +269,67 @@ class Term
      */
     public function getParent(): ?Term
     {
-        if ($this->parents->isEmpty())
+        if ($this->parents->isEmpty()) {
             return null;
-        return $this->parents[0];
+        }
+
+        // The last element in the array is the current active parent.
+        $p = $this->parents->last();
+        if ($p == false) {
+            return null;
+        }
+        else {
+            return $p;
+        }
     }
 
     public function setParent(?Term $parent): self
     {
-        $this->parents = new ArrayCollection();
+        $p = $this->getParent();
+        if ($p != null) {
+            $this->parents->removeElement($p);
+            $p->getChildren()->removeElement($this);
+        }
         if ($parent != null) {
             /**
              * @psalm-suppress InvalidArgument
              */
             $this->parents->add($parent);
+            $parent->children[] = $this;
         }
         return $this;
     }
 
+    public function getChildren(): Collection
+    {
+        return $this->children;
+    }
+
+    public function getCurrentImage(): ?string
+    {
+        if (count($this->images) == 0) {
+            return null;
+        }
+        $i = $this->images->getValues()[0];
+        return $i->getSource();
+    }
+
+    public function setCurrentImage(?string $s): self
+    {
+        if (! $this->images->isEmpty()) {
+            $this->images->remove(0);
+        }
+        if ($s != null) {
+            $ti = new TermImage();
+            $ti->setTerm($this);
+            $ti->setSource($s);
+            /**
+             * @psalm-suppress InvalidArgument
+             */
+            $this->images->add($ti);
+        }
+        return $this;
+    }
 
     public function createTermDTO(): TermDTO
     {
@@ -247,10 +341,14 @@ class Term
         $f->Translation = $this->getTranslation();
         $f->Romanization = $this->getRomanization();
         $f->Sentence = $this->getSentence();
+        $f->WordCount = $this->getWordCount();
+        $f->CurrentImage = $this->getCurrentImage();
 
         $p = $this->getParent();
-        if ($p != null)
+        if ($p != null) {
+            $f->ParentID = $p->getID();
             $f->ParentText = $p->getText();
+        }
 
         foreach ($this->getTermTags() as $tt) {
             $f->termTags[] = $tt->getText();

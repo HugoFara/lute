@@ -9,6 +9,11 @@ use Doctrine\Common\Collections\Criteria;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
+use App\Domain\SpaceDelimitedParser;
+use App\Domain\JapaneseParser;
+use App\Domain\ClassicalChineseParser;
+use App\Domain\ParsedTokenSaver;
+
 
 #[ORM\Entity(repositoryClass: LanguageRepository::class)]
 #[ORM\Table(name: 'languages')]
@@ -56,15 +61,21 @@ class Language
     #[ORM\Column(name: 'LgRightToLeft')]
     private ?bool $LgRightToLeft = false;
 
-    #[ORM\OneToMany(targetEntity: 'Text', mappedBy: 'language', fetch: 'EXTRA_LAZY')]
-    private Collection $texts;
+    #[ORM\Column(name: 'LgShowRomanization')]
+    private bool $LgShowRomanization = false;
+
+    #[ORM\Column(name: 'LgParserType', length: 20)]
+    private string $LgParserType = 'spacedel';
+
+    #[ORM\OneToMany(targetEntity: 'Book', mappedBy: 'Language', fetch: 'EXTRA_LAZY')]
+    private Collection $books;
 
     #[ORM\OneToMany(targetEntity: 'Term', mappedBy: 'language', fetch: 'EXTRA_LAZY')]
     private Collection $terms;
 
     public function __construct()
     {
-        $this->texts = new ArrayCollection();
+        $this->books = new ArrayCollection();
         $this->terms = new ArrayCollection();
     }
 
@@ -212,25 +223,36 @@ class Language
         return $this;
     }
 
-    /**
-     * @return Collection|Text[]
-     */
-    public function getTexts(): Collection
+    public function getLgShowRomanization(): bool
     {
-        return $this->texts;
+        return $this->LgShowRomanization;
     }
 
-    public function getActiveTexts(): Collection
+    public function setLgShowRomanization(bool $b): self
+    {
+        $this->LgShowRomanization = $b;
+        return $this;
+    }
+
+    /**
+     * @return Collection|Book[]
+     */
+    public function getBooks(): Collection
+    {
+        return $this->books;
+    }
+
+    public function getActiveBooks(): Collection
     {
         $criteria = Criteria::create()
-            ->andWhere(Criteria::expr()->eq('TxArchived', 0));
+            ->andWhere(Criteria::expr()->eq('Archived', 0));
 
         // Psalm says that this method isn't defined, but a) the code works,
         // and b) symfony docs say this works.
         /**
          * @psalm-suppress UndefinedInterfaceMethod
          */
-        return $this->texts->matching($criteria);
+        return $this->books->matching($criteria);
     }
 
     /**
@@ -241,6 +263,42 @@ class Language
         return $this->terms;
     }
 
+    public function setLgParserType(string $s): self
+    {
+        $this->LgParserType = $s;
+        return $this;
+    }
+
+    public function getLgParserType(): string
+    {
+        return $this->LgParserType;
+    }
+
+    public function getParser()
+    {
+        switch ($this->LgParserType) {
+        case 'spacedel':
+            return new SpaceDelimitedParser();
+        case 'classicalchinese':
+            return new ClassicalChineseParser();
+        case 'japanese':
+            return new JapaneseParser();
+        default:
+            throw new \Exception("Unknown parser type {$this->LgParserType} for {$this->getLgName()}");
+        }
+    }
+    
+    public function parse($texts): void
+    {
+        $p = $this->getParser();
+        $persister = new ParsedTokenSaver($p);
+        $persister->parse($texts);
+    }
+
+    public function getParsedTokens(string $s): array
+    {
+        return $this->getParser()->getParsedTokens($s, $this);
+    }
 
     /**
      * Language "factories" to create sensible defaults.
@@ -287,12 +345,50 @@ class Language
         return $english;
     }
 
+    public static function makeJapanese() {
+        if (!JapaneseParser::MeCab_installed())
+            throw new \Exception("MeCab not installed.");
+        $japanese = new Language();
+        $japanese
+            ->setLgName('Japanese')
+            ->setLgDict1URI('https://jisho.org/search/###')
+            ->setLgDict2URI('https://www.bing.com/images/search?q=###&form=HDRSC2&first=1&tsc=ImageHoverTitle')
+            ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#jp/en/###')
+            // Ref https://stackoverflow.com/questions/5797505/php-regex-expression-involving-japanese
+            ->setLgRegexpWordCharacters('\p{Han}\p{Katakana}\p{Hiragana}')
+            ->setLgRemoveSpaces(true)
+            ->setLgShowRomanization(true)
+            ->setLgParserType('japanese');
+        return $japanese;
+    }
+
+    public static function makeClassicalChinese() {
+        $lang = new Language();
+        $lang
+            ->setLgName('Classical Chinese')
+            ->setLgDict1URI('https://ctext.org/dictionary.pl?if=en&char=###')
+            ->setLgDict2URI('https://www.bing.com/images/search?q=###&form=HDRSC2&first=1&tsc=ImageHoverTitle')
+            ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#ch/en/###')
+            ->setLgRegexpWordCharacters('一-龥')
+            ->setLgRegexpSplitSentences('.!?:;。！？：；')
+            ->setLgRemoveSpaces(true)
+            ->setLgShowRomanization(true)
+            ->setLgParserType('classicalchinese');
+        return $lang;
+    }
+
     public static function getPredefined(): array {
-        return [
+        $ret = [
             Language::makeEnglish(),
             Language::makeFrench(),
             Language::makeGerman(),
             Language::makeSpanish(),
+            Language::makeClassicalChinese(),
         ];
+
+        if (JapaneseParser::MeCab_installed())
+            $ret[] = Language::makeJapanese();
+        return $ret;
     }
+
 }

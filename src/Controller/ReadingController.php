@@ -3,11 +3,10 @@
 namespace App\Controller;
 
 use App\Domain\ReadingFacade;
+use App\Domain\BookStats;
 use App\Repository\TextRepository;
 use App\Repository\TermRepository;
-use App\Repository\TermTagRepository;
 use App\Repository\ReadingRepository;
-use App\Domain\Parser;
 use App\DTO\TermDTO;
 use App\Entity\Text;
 use App\Entity\Sentence;
@@ -41,11 +40,21 @@ class ReadingController extends AbstractController
     #[Route('/{TxID}', name: 'app_read', methods: ['GET'])]
     public function read(Request $request, Text $text, ReadingFacade $facade): Response
     {
+        $facade->set_current_book_text($text);
+
+        $book = $text->getBook();
+        BookStats::markStale($book);
         [ $prev, $next ] = $facade->get_prev_next($text);
+        [ $prev10, $next10 ] = $facade->get_prev_next_by_10($text);
         return $this->render('read/index.html.twig', [
             'text' => $text,
+            'book' => $book,
+            'pagenum' => $text->getOrder(),
+            'pagecount' => $book->getPageCount(),
             'prevtext' => $prev,
-            'nexttext' => $next
+            'prevtext10' => $prev10,
+            'nexttext' => $next,
+            'nexttext10' => $next10,
         ]);
     }
 
@@ -55,65 +64,69 @@ class ReadingController extends AbstractController
         $facade->set_current_text($text);
         $sentences = $facade->getSentences($text);
         return $this->render('read/text.html.twig', [
+            'textid' => $text->getId(),
             'dictionary_url' => $text->getLanguage()->getLgGoogleTranslateURI(),
             'sentences' => $sentences
         ]);
     }
 
-    // TODO:refactor - too many dependencies injected here, perhaps can be managed by the ReadingFacade.
-    #[Route('/termform/{wid}/{textid}/{ord}/{text}', name: 'app_term_load', methods: ['GET', 'POST'])]
+    #[Route('/sentences/{TxID}', name: 'app_read_sentences', methods: ['GET'])]
+    public function sentences(Request $request, Text $text, ReadingFacade $facade): Response
+    {
+        $sentences = $facade->getSentences($text);
+        return $this->render('read/sentences.html.twig', [
+            'sentences' => $sentences
+        ]);
+    }
+
+    #[Route('/termform/{lid}/{text}', name: 'app_term_load', methods: ['GET', 'POST'])]
     public function term_form(
-        $wid,
-        $textid,
-        $ord,
-        $text,
+        int $lid,
+        string $text,
         Request $request,
-        ReadingRepository $readingRepository,
-        TextRepository $textRepository,
-        ReadingFacade $facade,
-        TermTagRepository $termTagRepository,
+        ReadingFacade $facade
     ): Response
     {
-        // The $text is set to '-' if there *is* no text,
-        // b/c otherwise the route didn't work.
-        if ($text == '-')
-            $text = '';
-        $term = $readingRepository->load($wid, $textid, $ord, $text);
-        $termdto = $term->createTermDTO();
-        $form = $this->createForm(TermDTOType::class, $termdto);
+        // When a term is created in the form, the spaces passed by
+        // the form are "nbsp;" = non-breaking spaces, which are
+        // actually different from regular spaces, as seen by the
+        // database.  Without the below fix to the space characters, a
+        // Term with text "hello there" will not match a database
+        // sentence "she said hello there".
+        $zws = mb_chr(0x200B); // zero-width space.
+        $parts = explode($zws, $text);
+        $cleanspaces = function($s) { return preg_replace('/\s/u', ' ', $s); };
+        $cleanedparts = array_map($cleanspaces, $parts);
+        $text = implode($zws, $cleanedparts);
+
+        $termdto = $facade->loadDTO($lid, $text);
+        $form = $this->createForm(TermDTOType::class, $termdto, [ 'hide_sentences' => true ]);
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
-            $term = TermDTO::buildTerm($termdto, $facade->getDictionary(), $termTagRepository);
-            $textentity = $textRepository->find($textid);
-            [ $updateitems, $update_js ] = $facade->save($term, $textentity);
-
-            // The updates are encoded here, and decoded in the
-            // twig javascript.  Thanks to
-            // https://stackoverflow.com/questions/38072085/
-            //   how-to-render-json-into-a-twig-in-symfony2
+            $facade->saveDTO($termdto);
             return $this->render('read/updated.html.twig', [
-                'term' => $term,
-                'textitems' => $updateitems,
-                'updates' => json_encode($update_js)
+                'termdto' => $termdto
             ]);
         }
 
         return $this->renderForm('read/frameform.html.twig', [
-            'term' => $termdto,
+            'termdto' => $termdto,
             'form' => $form,
             'extra' => $request->query,
             'showlanguageselector' => false,
-            'disabletermediting' => true
+            'disabletermediting' => true,
+            'parent_link_to_frame' => true,
         ]);
     }
 
-    #[Route('/{TxID}/allknown', name: 'app_read_allknown', methods: ['POST'])]
-    public function allknown(Request $request, Text $text, ReadingFacade $facade): Response
+    #[Route('/{TxID}/allknown/{nexttextid?}', name: 'app_read_allknown', methods: ['POST'])]
+    public function allknown(Request $request, ?int $nexttextid, Text $text, ReadingFacade $facade): Response
     {
         $facade->mark_unknowns_as_known($text);
+        $showid = $nexttextid ?? $text->getID();
         return $this->redirectToRoute(
             'app_read',
-            [ 'TxID' => $text->getID() ],
+            [ 'TxID' => $showid ],
             Response::HTTP_SEE_OTHER
         );
     }

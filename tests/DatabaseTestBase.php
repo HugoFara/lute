@@ -19,9 +19,12 @@ use App\Repository\LanguageRepository;
 use App\Repository\TextTagRepository;
 use App\Repository\TermTagRepository;
 use App\Repository\TermRepository;
+use App\Repository\BookRepository;
 use App\Repository\ReadingRepository;
 use App\Repository\SettingsRepository;
 use App\Domain\Dictionary;
+use App\Domain\BookBinder;
+use App\Domain\ReadingFacade;
 
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -35,12 +38,14 @@ abstract class DatabaseTestBase extends WebTestCase
     public TextTagRepository $texttag_repo;
     public TermTagRepository $termtag_repo;
     public TermRepository $term_repo;
+    public BookRepository $book_repo;
     public ReadingRepository $reading_repo;
     public SettingsRepository $settings_repo;
 
     public Language $spanish;
     public Language $french;
     public Language $english;
+    public Language $japanese;
 
     public Text $spanish_hola_text;
     
@@ -59,6 +64,7 @@ abstract class DatabaseTestBase extends WebTestCase
         $this->texttag_repo = $this->entity_manager->getRepository(App\Entity\TextTag::class);
         $this->termtag_repo = $this->entity_manager->getRepository(App\Entity\TermTag::class);
         $this->term_repo = $this->entity_manager->getRepository(App\Entity\Term::class);
+        $this->book_repo = $this->entity_manager->getRepository(App\Entity\Book::class);
 
         $this->reading_repo = new ReadingRepository($this->entity_manager, $this->term_repo, $this->language_repo);
         $this->settings_repo = new SettingsRepository($this->entity_manager);
@@ -86,8 +92,8 @@ abstract class DatabaseTestBase extends WebTestCase
         $spanish = new Language();
         $spanish
             ->setLgName('Spanish')
-            ->setLgDict1URI('https://es.thefreedictionary.com/###')
-            ->setLgDict2URI('https://www.wordreference.com/es/en/translation.asp?spen=###')
+            ->setLgDict1URI('https://www.bing.com/images/search?q=###&form=HDRSC2&first=1&tsc=ImageHoverTitle')
+            ->setLgDict2URI('https://es.thefreedictionary.com/###')
             ->setLgGoogleTranslateURI('*https://www.deepl.com/translator#es/en/###');
         $this->language_repo->save($spanish, true);
         $this->spanish = $spanish;
@@ -113,46 +119,29 @@ abstract class DatabaseTestBase extends WebTestCase
 
     public function load_spanish_words(): void
     {
-        $spid = $this->spanish->getLgID();
-        DbHelpers::add_word($spid, "Un gato", "un gato", 1, 2);
-        DbHelpers::add_word($spid, "lista", "lista", 1, 1);
-        DbHelpers::add_word($spid, "tiene una", "tiene una", 1, 2);
-
-        // A parent term.
-        DbHelpers::add_word($spid, "listo", "listo", 1, 1);
-        DbHelpers::add_word_parent($spid, "lista", "listo");
-
-        DbHelpers::add_word_tag($spid, "Un gato", "furry");
-        DbHelpers::add_word_tag($spid, "lista", "adj");
-        DbHelpers::add_word_tag($spid, "lista", "another");
-        DbHelpers::add_word_tag($spid, "listo", "padj1");
-        DbHelpers::add_word_tag($spid, "listo", "padj2");
+        $zws = mb_chr(0x200B);
+        $terms = [ "Un{$zws} {$zws}gato", 'lista', "tiene{$zws} {$zws}una", 'listo' ];
+        $this->addTerms($this->spanish, $terms);
     }
 
-    public function create_text($title, $content, $language, $parseText = true): Text {
-        $t = new Text();
-        $t->setTitle($title);
-        $t->setText($content);
-        $t->setLanguage($language);
-        $this->text_repo->save($t, true, $parseText);
-        return $t;
-    }
-
-    public function load_spanish_texts(bool $parseTexts = true): void
-    {
-        $t = new Text();
-        $t->setTitle("Hola.");
-        $t->setText("Hola tengo un gato.  No tengo una lista.\nElla tiene una bebida.");
-        $t->setLanguage($this->spanish);
-        $this->text_repo->save($t, true, $parseTexts);
-        $this->spanish_hola_text = $t;
+    public function addTerms(Language $lang, $term_strings) {
+        $dict = new Dictionary($this->term_repo);
+        $arr = $term_strings;
+        if (is_string($term_strings))
+            $arr = [ $term_strings ];
+        $ret = [];
+        foreach ($arr as $t) {
+            $term = new Term($lang, $t);
+            $dict->add($term, true);
+            $ret[] = $term;
+        }
+        return $ret;
     }
 
     public function load_french_data(): void
     {
+        $this->addTerms($this->french, ['lista']);
         $frid = $this->french->getLgID();
-        DbHelpers::add_word($frid, "lista", "lista", 1, 1);
-        DbHelpers::add_word_tag($frid, "lista", "nonsense");
         $frt = new Text();
         $frt->setTitle("Bonjour.");
         $frt->setText("Bonjour je suis lista.");
@@ -160,31 +149,67 @@ abstract class DatabaseTestBase extends WebTestCase
         $this->text_repo->save($frt, true);
     }
 
-    public function load_all_test_data(): void
-    {
-        $this->load_languages();
-        $this->load_spanish_words();
-        $this->load_spanish_texts();
-
-        $this->load_french_data();
-    }
-
     public function make_text(string $title, string $text, Language $lang): Text {
-        $t = new Text();
-        $t->setTitle($title);
-        $t->setText($text);
-        $t->setLanguage($lang);
-        $this->text_repo->save($t, true);
-        return $t;
+        $b = BookBinder::makeBook($title, $lang, $text);
+        $this->book_repo->save($b, true);
+        $b->fullParse();  // Most tests require full parsing.
+        return $b->getTexts()[0];
     }
 
-    public function make_term(Language $lang, string $s) {
-        $dict = new Dictionary($this->entity_manager);
-        $term = new Term();
-        $term->setLanguage($lang);
-        $term->setText($s);
-        $dict->add($term, true);
-        return $term;
+    public function save_term($text, $s) {
+        $textid = $text->getID();
+        $dict = new Dictionary($this->term_repo);
+        $facade = new ReadingFacade(
+            $this->reading_repo,
+            $this->text_repo,
+            $this->book_repo,
+            $this->settings_repo,
+            $dict,
+            $this->termtag_repo
+        );
+        $dto = $facade->loadDTO($text->getLanguage()->getLgID(), $s);
+        $facade->saveDTO($dto);
+    }
+
+    private function get_renderable_textitems($text) {
+        $ret = [];
+
+        $dict = new Dictionary($this->term_repo);
+        $facade = new ReadingFacade(
+            $this->reading_repo,
+            $this->text_repo,
+            $this->book_repo,
+            $this->settings_repo,
+            $dict,
+            $this->termtag_repo
+        );
+
+        $ss = $facade->getSentences($text);
+        foreach ($ss as $s) {
+            foreach ($s->renderable() as $ti) {
+                $ret[] = $ti;
+            }
+        }
+        return $ret;
+    }
+
+    public function get_rendered_string($text, $imploder = '/', $overridestringize = null) {
+        $tis = $this->get_renderable_textitems($text);
+        $stringize = function($ti) {
+            $zws = mb_chr(0x200B);
+            $status = "({$ti->WoStatus})";
+            if ($status == '(0)' || $status == '()')
+                $status = '';
+            return str_replace($zws, '', "{$ti->Text}{$status}");
+        };
+        $usestringize = $overridestringize ?? $stringize;
+        $ss = array_map($usestringize, $tis);
+        return implode($imploder, $ss);
+    }
+
+    public function assert_rendered_text_equals($text, $expected) {
+        $s = $this->get_rendered_string($text);
+        $this->assertEquals($s, $expected);
     }
 
 }

@@ -8,8 +8,11 @@ use App\Entity\Language;
 use App\Repository\LanguageRepository;
 use App\Entity\Text;
 use App\Repository\TextRepository;
+use App\Repository\BookRepository;
 use App\Entity\Term;
 use App\Domain\Dictionary;
+use App\Domain\BookBinder;
+use App\Domain\JapaneseParser;
 
 // Class for namespacing only.
 class MigrationHelper {
@@ -122,11 +125,6 @@ class MigrationHelper {
         return ($dbname == 'lute_demo');
     }
 
-    public static function isLuteTest() {
-        [ $server, $userid, $passwd, $dbname ] = Connection::getParams();
-        return (str_starts_with($dbname, 'test_'));
-    }
-
     public static function isEmptyDemo() {
         if (! MigrationHelper::isLuteDemo())
             return false;
@@ -155,35 +153,36 @@ class MigrationHelper {
 
     public static function loadDemoData(
         LanguageRepository $lang_repo,
-        TextRepository $text_repo,
+        BookRepository $book_repo,
         Dictionary $dictionary
     ) {
         $e = Language::makeEnglish();
         $f = Language::makeFrench();
         $s = Language::makeSpanish();
         $g = Language::makeGerman();
+        $cc = Language::makeClassicalChinese();
 
-        $langs = [ $e, $f, $s, $g ];
+        $langs = [ $e, $f, $s, $g, $cc ];
+        $files = [
+            'tutorial.txt',
+            'tutorial_follow_up.txt',
+            'es_aladino.txt',
+            'fr_goldilocks.txt',
+            'de_Stadtmusikanten.txt',
+            'cc_demo.txt',
+        ];
+
+        if (JapaneseParser::MeCab_installed()) {
+            $langs[] = Language::makeJapanese();
+            $files[] = 'jp_kitakaze_to_taiyou.txt';
+        }
+
         $langmap = [];
         foreach ($langs as $lang) {
             $lang_repo->save($lang, true);
             $langmap[ $lang->getLgName() ] = $lang;
         }
 
-        $term = new Term();
-        $term->setLanguage($e);
-        $term->setText("your local environment file");
-        $term->setStatus(3);
-        $term->setTranslation("This is \".env.local\", your personal file in the project root folder :-)");
-        $dictionary->add($term, true);
-
-        $files = [
-            'tutorial.txt',
-            'tutorial_follow_up.txt',
-            'es_aladino.txt',
-            'fr_goldilocks.txt',
-            'de_Stadtmusikanten.txt'
-        ];
         foreach ($files as $f) {
             $fname = $f;
             $basepath = __DIR__ . '/../../db/demo/';
@@ -196,13 +195,17 @@ class MigrationHelper {
             preg_match('/title:\s*(.*)\n/u', $fullcontent, $matches);
             $title = $matches[1];
 
-            $t = new Text();
-            $t->setTitle($title);
-            $t->setLanguage($lang);
-            $t->setText($content);
-            
-            $text_repo->save($t, true);
+            $b = BookBinder::makeBook($title, $lang, $content);
+            $book_repo->save($b, true);
         }
+
+        $term = new Term();
+        $term->setLanguage($e);
+        $zws = mb_chr(0x200B);
+        $term->setText("your{$zws} {$zws}local{$zws} {$zws}environment{$zws} {$zws}file");
+        $term->setStatus(3);
+        $term->setTranslation("This is \".env.local\", your personal file in the project root folder :-)");
+        $dictionary->add($term, true);
     }
 
 }

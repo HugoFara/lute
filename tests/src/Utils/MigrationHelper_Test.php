@@ -1,6 +1,5 @@
 <?php declare(strict_types=1);
 
-require_once __DIR__ . '/../../../src/Domain/Parser.php';
 require_once __DIR__ . '/../../DatabaseTestBase.php';
 
 use App\Utils\MigrationHelper;
@@ -32,7 +31,6 @@ final class MigrationHelper_Test extends DatabaseTestBase
 
     public function test_smoke_tests() {
         $this->assertFalse(MigrationHelper::isLuteDemo(), 'test db is not demo');
-        $this->assertTrue(MigrationHelper::isLuteTest(), 'test db is test!');
         $this->assertFalse(MigrationHelper::hasPendingMigrations(), 'everything done');
     }
 
@@ -40,11 +38,11 @@ final class MigrationHelper_Test extends DatabaseTestBase
      * @group demo
      */
     public function test_smoke_can_load_demo_data() {
-        $dict = new Dictionary($this->entity_manager);
-        MigrationHelper::loadDemoData($this->language_repo, $this->text_repo, $dict);
+        $dict = new Dictionary($this->term_repo);
+        MigrationHelper::loadDemoData($this->language_repo, $this->book_repo, $dict);
         $this->assertTrue(true, 'dummy');
         $t = $this->text_repo->find(1);
-        $this->assertEquals($t->getTitle(), 'Tutorial', 'got tutorial, index link to /read/1 is good.');
+        $this->assertEquals(explode(' ', $t->getTitle())[0], 'Tutorial', 'got tutorial, index link to /read/1 is good.');
     }
 
     /**

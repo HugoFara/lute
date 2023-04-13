@@ -20,14 +20,13 @@ final class Dictionary_Test extends DatabaseTestBase
         $this->load_languages();
 
         $this->dictionary = new Dictionary(
-            $this->entity_manager,
             $this->term_repo
         );
     }
 
     public function test_find_by_text_is_found()
     {
-        $this->make_term($this->spanish, 'PARENT');
+        $this->addTerms($this->spanish, 'PARENT');
         $cases = [ 'PARENT', 'parent', 'pAReNt' ];
         foreach ($cases as $c) {
             $p = $this->dictionary->find($c, $this->spanish);
@@ -44,29 +43,22 @@ final class Dictionary_Test extends DatabaseTestBase
 
     public function test_find_only_looks_in_specified_language()
     {
-        $this->make_term($this->french, 'bonjour');
+        $this->addTerms($this->french, 'bonjour');
         $p = $this->dictionary->find('bonjour', $this->spanish);
         $this->assertTrue($p == null, 'french terms not checked');
     }
 
     public function test_findMatches_matching()
     {
-        $this->make_term($this->spanish, 'PARENT');
-        $this->make_term($this->french, 'PARENT');
+        $this->addTerms($this->spanish, 'PARENT');
+        $this->addTerms($this->french, 'PARENT');
 
-        $cases = [ 'ARE', 'are', 'AR' ];
+        $cases = [ 'PARE', 'pare', 'PAR' ];
         foreach ($cases as $c) {
             $p = $this->dictionary->findMatches($c, $this->spanish);
             $this->assertEquals(count($p), 1, '1 match for case ' . $c . ' in spanish');
             $this->assertEquals($p[0]->getText(), 'PARENT', 'parent found for case ' . $c);
         }
-    }
-
-    public function test_findMatches_no_sql_injection_thanks()
-    {
-        $injection = "a%'; select count(*) from words;";
-        $p = $this->dictionary->findMatches($injection, $this->spanish);
-        $this->assertEquals(count($p), 0);
     }
 
     public function test_findMatches_returns_empty_if_blank_string()
@@ -77,7 +69,7 @@ final class Dictionary_Test extends DatabaseTestBase
 
     public function test_findMatches_returns_empty_if_different_language()
     {
-        $this->make_term($this->french, 'chien');
+        $this->addTerms($this->french, 'chien');
 
         $p = $this->dictionary->findMatches('chien', $this->spanish);
         $this->assertEquals(count($p), 0, "no chien in spanish");
@@ -201,91 +193,75 @@ final class Dictionary_Test extends DatabaseTestBase
         DbHelpers::assertRecordcountEquals('select * from wordparents', 0, 'no assocs');
     }
 
+    /**
+     * @group changeRemove
+     */
     public function test_change_parent_removes_old_wordparent_record() {
-        $parent = new Term();
-        $parent->setLanguage($this->spanish);
-        $parent->setText('perro');
+        $parent = new Term($this->spanish, 'perro');
         $this->dictionary->add($parent, true);
 
-        $newpar = new Term();
-        $newpar->setLanguage($this->spanish);
-        $newpar->setText('gato');
-        $this->dictionary->add($newpar, true);
+        $gato = new Term($this->spanish, 'gato');
+        $this->dictionary->add($gato, true);
 
-        $t = new Term();
-        $t->setLanguage($this->spanish);
-        $t->setText('perros');
+        $t = new Term($this->spanish, 'perros');
         $t->setParent($parent);
         $this->dictionary->add($t, true);
 
         $expected = [ "{$t->getID()}; {$parent->getID()}" ];
         DbHelpers::assertTableContains("select WpWoID, WpParentWoID from wordparents", $expected, "parent set");
 
-        $t->setParent($newpar);
+        $t->setParent($gato);
         $this->dictionary->add($t, true);
 
-        $expected = [ "{$t->getID()}; {$newpar->getID()}" ];
+        $expected = [ "{$t->getID()}; {$gato->getID()}" ];
         DbHelpers::assertTableContains("select WpWoID, WpParentWoID from wordparents", $expected, "NEW parent set");
 
         $t->setParent(null);
         $this->dictionary->add($t, true);
         DbHelpers::assertRecordcountEquals('select * from wordparents', 0, 'no assocs');
+
+        foreach(['perros', 'perro', 'gato'] as $s) {
+            $f = $this->dictionary->find($s, $this->spanish);
+            $this->assertTrue($f != null, $s . ' sanity check, still exists');
+        }
     }
 
     public function test_add_term_links_existing_TextItems()
     {
-        $text = new Text();
-        $text->setLanguage($this->spanish);
-        $text->setTitle('hola');
-        $text->setText('tengo un gato');
-        $this->text_repo->save($text, true);
+        $text = $this->make_text('hola', 'tengo un gato', $this->spanish);
 
-        $sql = "select ti2textlc from textitems2 where ti2woid <> 0";
-        DbHelpers::assertTableContains($sql, [], 'no terms');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato");
 
         $t = new Term();
         $t->setLanguage($this->spanish);
         $t->setText('gato');
         $this->dictionary->add($t);
 
-        DbHelpers::assertTableContains($sql, [ 'gato' ], '1 term');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato(1)");
     }
 
     public function test_remove_term_unlinks_existing_TextItems()
     {
-        $text = new Text();
-        $text->setLanguage($this->spanish);
-        $text->setTitle('hola');
-        $text->setText('tengo un gato');
-        $this->text_repo->save($text, true);
+        $text = $this->make_text('hola', 'tengo un gato', $this->spanish);
 
-        $sql = "select ti2textlc from textitems2 where ti2woid <> 0";
-        DbHelpers::assertTableContains($sql, [], 'no terms');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato");
 
         $t = new Term();
         $t->setLanguage($this->spanish);
         $t->setText('gato');
         $this->dictionary->add($t);
-
-        DbHelpers::assertTableContains($sql, [ 'gato' ], '1 term');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato(1)");
 
         $this->dictionary->remove($t);
-        DbHelpers::assertTableContains($sql, [], 'again no terms');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato");
     }
 
     /**
      * @group dictflush
      */
     public function test_save_and_flush_bulk_updates_text_items() {
-        $sentence = 'tengo un gato en mi cuarto';
-        $text = new Text();
-        $text->setLanguage($this->spanish);
-        $text->setTitle('hola');
-        $text->setText($sentence);
-        $this->text_repo->save($text, true);
-
-        $sql = "select ti2textlc from textitems2 where ti2woid <> 0";
-        DbHelpers::assertTableContains($sql, [], 'no terms');
+        $sentence = 'tengo un gato';
+        $text = $this->make_text('hola', $sentence, $this->spanish);
 
         foreach (explode(' ', $sentence) as $s) {
             $t = new Term();
@@ -293,37 +269,141 @@ final class Dictionary_Test extends DatabaseTestBase
             $t->setText($s);
             $this->dictionary->add($t, false);
         }
-        DbHelpers::assertTableContains($sql, [], 'still no mappings');
-        $this->dictionary->flush();
 
-        DbHelpers::assertTableContains($sql, explode(' ', $sentence), 'terms created');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato");
+        $this->dictionary->flush();
+        $this->assert_rendered_text_equals($text, "tengo(1)/ /un(1)/ /gato(1)");
     }
 
     /**
      * @group dictflush
      */
     public function test_save_and_flush_with_multiword_terms_bulk_updates_text_items() {
-        $sentence = 'tengo un gato en mi cuarto';
-        $text = new Text();
-        $text->setLanguage($this->spanish);
-        $text->setTitle('hola');
-        $text->setText($sentence);
-        $this->text_repo->save($text, true);
+        $sentence = 'tengo un gato';
+        $text = $this->make_text('hola', $sentence, $this->spanish);
 
-        $sql = "select ti2textlc from textitems2 where ti2woid <> 0";
-        DbHelpers::assertTableContains($sql, [], 'no terms');
-
-        $terms = [ 'tengo', 'un gato' ];
+        $terms = [ 'tengo', "un gato" ];
         foreach ($terms as $s) {
             $t = new Term();
             $t->setLanguage($this->spanish);
             $t->setText($s);
             $this->dictionary->add($t, false);
         }
-        DbHelpers::assertTableContains($sql, [], 'still no mappings');
-        $this->dictionary->flush();
 
-        DbHelpers::assertTableContains($sql, $terms, 'terms created');
+        $this->assert_rendered_text_equals($text, "tengo/ /un/ /gato");
+        $this->dictionary->flush();
+        $this->assert_rendered_text_equals($text, "tengo(1)/ /un gato(1)");
+    }
+
+    /**
+     * @group dictrefs
+     */
+    public function test_get_references_smoke_test()
+    {
+        $text = $this->make_text('hola', 'Tengo un gato.  No tengo un perro.', $this->spanish);
+
+        $tengo = $this->addTerms($this->spanish, 'tengo')[0];
+        $refs = $this->dictionary->findReferences($tengo);
+
+        $keys = array_keys($refs);
+        $this->assertEquals([ 'term', 'parent', 'children', 'siblings', 'archived' ], $keys);
+
+        $this->assertEquals(2, count($refs['term']), 'term');
+        $this->assertEquals(0, count($refs['parent']), 'parent');
+        $this->assertEquals(0, count($refs['siblings']), 'siblings');
+        $this->assertEquals(0, count($refs['archived']), 'archived');
+
+        $trs = $refs['term'];
+        $zws = mb_chr(0x200B);
+        $this->assertEquals("Tengo un gato.", str_replace($zws, '', $trs[0]->Sentence));
+        $this->assertEquals($text->getID(), $trs[0]->TxID);
+        $this->assertEquals("hola", $trs[0]->Title);
+        $this->assertEquals("No tengo un perro.", str_replace($zws, '', $trs[1]->Sentence));
+    }
+
+    /**
+     * @group dictrefs
+     */
+    public function test_get_all_references()
+    {
+        $text = $this->make_text('hola', 'Tengo un gato.  Ella tiene un perro.  No quiero tener nada.', $this->spanish);
+        $archtext = $this->make_text('luego', 'Tengo un coche.', $this->spanish);
+
+        [ $tengo, $tiene, $tener ] = $this->addTerms($this->spanish, ['tengo', 'tiene', 'tener']);
+        $tengo->setParent($tener);
+        $tiene->setParent($tener);
+        $this->dictionary->add($tener, true);
+        $this->dictionary->add($tiene, true);
+
+        $archtext->setArchived(true);
+        $this->text_repo->save($archtext, true);
+
+        $refs = $this->dictionary->findReferences($tengo);
+        $this->assertEquals(1, count($refs['term']), 'term');
+        $this->assertEquals(1, count($refs['parent']), 'parent');
+        $this->assertEquals(1, count($refs['siblings']), 'siblings');
+        $this->assertEquals(1, count($refs['archived']), 'archived tengo');
+
+        $tostring = function($refdto) {
+            $zws = mb_chr(0x200B);
+            $ret = implode(', ', [ $refdto->TxID, $refdto->Title, $refdto->Sentence ?? 'NULL' ]);
+            return str_replace($zws, '/', $ret);
+        };
+        $this->assertEquals("1, hola, /Tengo/ /un/ /gato/./", $tostring($refs['term'][0]), 'term');
+        $this->assertEquals("1, hola, /No/ /quiero/ /tener/ /nada/./", $tostring($refs['parent'][0]), 'p');
+        $this->assertEquals("1, hola, /Ella/ /tiene/ /un/ /perro/./", $tostring($refs['siblings'][0]), 's');
+        $this->assertEquals("2, luego, /Tengo/ /un/ /coche/./", $tostring($refs['archived'][0]), 'a');
+
+        $refs = $this->dictionary->findReferences($tener);
+        $this->assertEquals(1, count($refs['term']), 'term');
+        $this->assertEquals(0, count($refs['parent']), 'parent');
+        $this->assertEquals(2, count($refs['children']), 'children');
+        $this->assertEquals(0, count($refs['siblings']), 'siblings');
+        $this->assertEquals(1, count($refs['archived']), 'archived tener');
+
+        $this->assertEquals("1, hola, /No/ /quiero/ /tener/ /nada/./", $tostring($refs['term'][0]), 'term');
+        $this->assertEquals("1, hola, /Ella/ /tiene/ /un/ /perro/./", $tostring($refs['children'][1]), 'c tener 1');
+        $this->assertEquals("1, hola, /Tengo/ /un/ /gato/./", $tostring($refs['children'][0]), 'c tener 0');
+        $this->assertEquals("2, luego, /Tengo/ /un/ /coche/./", $tostring($refs['archived'][0]), 'a tener');
+
+    }
+
+    /**
+     * @group dictrefs
+     */
+    public function test_archived_references()
+    {
+        $text = $this->make_text('hola', 'Tengo un gato.  Ella tiene un perro.  No quiero tener nada.', $this->spanish);
+        $archtext = $this->make_text('luego', 'Tengo un coche.', $this->spanish);
+
+        [ $tengo, $tiene, $tener ] = $this->addTerms($this->spanish, ['tengo', 'tiene', 'tener']);
+        $tengo->setParent($tener);
+        $tiene->setParent($tener);
+        $this->dictionary->add($tener, true);
+        $this->dictionary->add($tiene, true);
+
+        $text->setArchived(true);
+        $this->text_repo->save($text, true);
+        $archtext->setArchived(true);
+        $this->text_repo->save($archtext, true);
+
+        $refs = $this->dictionary->findReferences($tengo);
+
+        $tostring = function($refdto) {
+            $zws = mb_chr(0x200B);
+            $ret = implode(', ', [ $refdto->TxID, $refdto->Title, $refdto->Sentence ?? 'NULL' ]);
+            return str_replace($zws, '/', $ret);
+        };
+
+        $refs = $this->dictionary->findReferences($tengo);
+        $archrefs = $refs['archived'];
+        $this->assertEquals(4, count($archrefs), 'archived tengo');
+
+        $this->assertEquals("1, hola, /Tengo/ /un/ /gato/./", $tostring($archrefs[0]), 'c tener 0');
+        $this->assertEquals("2, luego, /Tengo/ /un/ /coche/./", $tostring($archrefs[1]), 'a tener');
+        $this->assertEquals("1, hola, /Ella/ /tiene/ /un/ /perro/./", $tostring($archrefs[2]), 'c tener 1');
+        $this->assertEquals("1, hola, /No/ /quiero/ /tener/ /nada/./", $tostring($archrefs[3]), 'term');
+
     }
 
 }

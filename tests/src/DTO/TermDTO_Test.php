@@ -19,7 +19,6 @@ final class TermDTO_Test extends DatabaseTestBase
         $this->load_languages();
 
         $this->dictionary = new Dictionary(
-            $this->entity_manager,
             $this->term_repo
         );
     }
@@ -42,6 +41,7 @@ final class TermDTO_Test extends DatabaseTestBase
             'tr' => $t->getTranslation(),
             'r' => $t->getRomanization(),
             's' => $t->getSentence(),
+            'i' => $t->getCurrentImage(),
             'tt' => implode(', ', $tt),
             'pt' => $pt
         ];
@@ -59,6 +59,7 @@ final class TermDTO_Test extends DatabaseTestBase
         $english->setLgName('English');
 
         $t = new Term($english, 'Hello');
+        $t->setCurrentImage('hello.png');
 
         $dto = $t->createTermDTO();
 
@@ -87,8 +88,8 @@ final class TermDTO_Test extends DatabaseTestBase
     public function test_buildTerm_returns_existing_term_in_language()
     {
         $t = new Term();
-        $t->setText('Hola');
         $t->setLanguage($this->spanish);
+        $t->setText('Hola');
         $this->dictionary->add($t, true);
 
         $dto = $t->createTermDTO();
@@ -115,7 +116,10 @@ final class TermDTO_Test extends DatabaseTestBase
         $this->assertEquals($parent->getText(), 'perro', 'parent of perros is perro');
     }
 
-    public function test_buildTerm_with_new_parent_and_tag()
+    /**
+     * @group dtoparent
+     */
+    public function test_buildTerm_with_new_parent_parent_gets_translation_and_image_and_tag()
     {
         foreach(['perros', 'perro'] as $text) {
             $f = $this->dictionary->find($text, $this->spanish);
@@ -125,17 +129,39 @@ final class TermDTO_Test extends DatabaseTestBase
         $dto = new TermDTO();
         $dto->language = $this->spanish;
         $dto->Text = 'perros';
+        $dto->CurrentImage = 'someimage.jpeg';
+        $dto->Translation = 'transl';
         $dto->ParentText = 'perro';
         $dto->termTags[] = 'newtag';
 
         $perros = TermDTO::buildTerm($dto, $this->dictionary, $this->termtag_repo);
+        $this->assertEquals($perros->getCurrentImage(), 'someimage.jpeg', 'have img');
+        $this->assertEquals($perros->getTranslation(), 'transl', 'c trans');
 
         $parent = $perros->getParent();
         $this->assertTrue($parent != null, 'have parent');
         $this->assertEquals(count($parent->getTermTags()), 1, 'tag count');
         $this->assertEquals($parent->getTermTags()[0]->getText(), 'newtag');
+        $this->assertEquals($parent->getCurrentImage(), 'someimage.jpeg', 'parent have img');
+        $this->assertEquals($parent->getTranslation(), 'transl', 'parent trans');
     }
 
+    /**
+     * @group dtoparent
+     */
+    public function test_cannot_set_dto_term_as_its_own_parent()
+    {
+        $dto = new TermDTO();
+        $dto->language = $this->spanish;
+        $dto->Text = 'perro';
+        $dto->ParentText = 'perro';
+        $perro = TermDTO::buildTerm($dto, $this->dictionary, $this->termtag_repo);
+        $this->assertTrue($perro->getParent() == null, 'no parent');
+    }
+
+    /**
+     * @group dtoparent
+     */
     public function test_add_term_existing_parent_creates_link() {
         $p = new Term();
         $p->setLanguage($this->spanish);
@@ -153,6 +179,37 @@ final class TermDTO_Test extends DatabaseTestBase
         $this->assertTrue($parent != null, 'have parent');
         $this->assertEquals($parent->getText(), 'perro', 'which is perro');
         $this->assertEquals($parent->getID(), $p->getID(), 'existing perro found');
+    }
+
+    /**
+     * @group dtoparent
+     */
+    public function test_add_term_existing_parent_parent_gets_translation_if_missing() {
+        $p = new Term($this->spanish, 'perro');
+        $this->dictionary->add($p);
+
+        $dto = new TermDTO();
+        $dto->language = $this->spanish;
+        $dto->Text = 'perros';
+        $dto->Translation = 'translation';
+        $dto->ParentText = 'perro';
+
+        $perros = TermDTO::buildTerm($dto, $this->dictionary, $this->termtag_repo);
+
+        $parent = $perros->getParent();
+        $this->assertEquals($parent->getText(), 'perro', 'which is perro');
+        $this->assertEquals($parent->getTranslation(), 'translation', 'translation applied');
+
+        $perrito_dto = new TermDTO();
+        $perrito_dto->language = $this->spanish;
+        $perrito_dto->Text = 'perrito';
+        $perrito_dto->Translation = 'small dog';
+        $perrito_dto->ParentText = 'perro';
+        $perrito = TermDTO::buildTerm($perrito_dto, $this->dictionary, $this->termtag_repo);
+
+        $parent = $perrito->getParent();
+        $this->assertEquals($parent->getText(), 'perro', 'which is perro');
+        $this->assertEquals($parent->getTranslation(), 'translation', 'existing transl kept');
     }
 
     public function test_buildTerm_returns_new_term_if_no_match() {
